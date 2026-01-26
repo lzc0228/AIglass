@@ -1,16 +1,60 @@
+# Environment variables
 .env
-.ultralytics/
-context/faces/
-recordings/
+.env.local
+
+# Python cache
 __pycache__/
 *.pyc
-.specstory/
+*.pyo
+*.pyd
+.Python
+
+# Model files (large binary files)
+model/
+*.pt
+*.pth
+*.onnx
+*.engine
+hand_landmarker.task
+
+# Audio/Video recordings and downloads
+recordings/
+voice/
+music/
 music_downloads/
-latex/
-论文写作/
+*.wav
+*.mp3
+*.mp4
+
+# Static assets
+static/
+
+# Compiled outputs
+compile/
 *.out
 *.log
 debug_output.txt
 output.txt
 compile.zip
 musicn-1.5.0.tar.gz
+
+# IDE and tools
+.vscode/
+.idea/
+*.swp
+*.swo
+ultralytics/
+.ultralytics/
+.specstory/
+
+# User data and privacy
+context/faces/
+
+# Documentation (large)
+latex/
+论文写作/
+*.pdf
+
+# API keys and secrets
+*_key*
+*_secret*
