@@ -454,3 +454,56 @@
   1. 在 `openai_glasses` 环境里跑一次完整的 `python app_main.py`（最好连上摄像头/ESP32），验证人脸识别、关灯提醒与 semantic exploration 的语音/UI回路，并检查 `recordings/events_*.jsonl` 内容是否合理。  
   2. 用真实红绿灯帧跑 `workflow_blindpath.detect_traffic_light`，观察 `_parse_yolo_results` 的日志与返回色彩，必要时扩充 `YOLO_TRAFFIC_LIGHT_COLOR_MAP` 并调整 `logger` 级别。  
   3. 复查汇总文档（`tasks/实现程度对照文档汇总.md`）里的 TODO，按照依赖（数据/硬件/网络）顺序安排下一轮工作（对照 `tasks/执行文档.md`、`tasks/项目综合文档.md` 的 PARTIAL 项）。
+
+---
+
+## 15) 本轮对话补充：Git 分支准备与上传前清理（2026-01-26）
+
+> 目标：检查 GitHub 远端配置，创建并整理 `dev` 分支；把“上传前准备”全部做完（用户自行 push）。
+
+### 15.1 关键发现
+
+1. 远端仓库：`origin=https://github.com/lzc0228/AIglass.git`（HTTPS）。
+2. 网络连通性 OK（可访问 github.com），但 `git ls-remote` 返回 **401**，并触发 askpass 等待交互式输入（导致命令超时）。结论：**需要 GitHub 认证**（PAT 或 SSH）。
+3. 仓库中存在不应推送的运行时/缓存产物：
+   - `recordings/`（音视频录制文件，体积较大）
+   - `__pycache__/`（`.pyc`）
+   - `.specstory/`、`music_downloads/`、`*.out` 等调试/下载产物
+4. `.env` 在本地存在但已被 `.gitignore` 忽略；`.env.example` 使用占位符，不含真实 key。
+
+### 15.2 本轮完成的上传前准备（已落地到本地 `dev`）
+
+1. **创建分支**：从 `main` 创建并切换到 `dev`。
+2. **配置提交身份**：设置本地 `git config user.name/user.email`，避免 commit 阶段缺失身份导致失败。
+3. **清理忽略规则**：更新 `.gitignore`，新增忽略：
+   - `.specstory/`、`music_downloads/`、`compile.zip`、`musicn-1.5.0.tar.gz`
+   - `recordings/`、`context/faces/`、`__pycache__/`、`*.pyc`
+   - `*.out`、`*.log`、`debug_output.txt`、`output.txt`
+4. **提交内容**：
+   - `79f7985`：`dev: sync features and docs`（本轮实现与文档同步的主提交）
+   - `d452a4a`：`chore: stop tracking runtime artifacts`（将历史误纳入 git 的 `recordings/` 与 `__pycache__/` 从版本控制中移除；本地文件保留）
+5. **最终状态**：`dev` 分支工作区干净（`git status` 无未提交变更）。
+
+### 15.3 决策
+
+1. 按用户要求：我不直接 push；只把 `dev` 分支与提交准备完整。
+2. 保持 `origin` 为 HTTPS 不自动改动；由用户选择继续 HTTPS（PAT）或改 SSH。
+
+### 15.4 假设
+
+1. 用户对 `lzc0228/AIglass` 拥有 push 权限。
+2. 用户将使用 GitHub 的 Personal Access Token（PAT）或 SSH key 完成认证。
+3. 目标远端分支名为 `dev`（与本地一致）。
+
+### 15.5 未解决问题
+
+1. 远端认证未完成：HTTPS 方式会 401，需要 PAT/SSH 才能执行 `push/ls-remote`。
+2. 未确认远端是否已存在 `dev` 分支（因认证卡住无法查询）。
+
+### 15.6 下一步行动（用户侧）
+
+1. 推送分支：`git push -u origin dev`
+2. 若提示 401/需要密码：
+   - HTTPS：Username 填 GitHub 用户名；Password 填 PAT（classic token，至少 `repo` 权限）
+   - 或改 SSH：`git remote set-url origin git@github.com:lzc0228/AIglass.git` 后再 `git push -u origin dev`
+3. 推送后建议：在 GitHub 开 PR（`dev` → `main`），并在 PR 描述中引用关键提交号 `79f7985` / `d452a4a` 作为变更依据。

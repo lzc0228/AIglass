@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 .specstory/
 music_downloads/
+latex/
 *.out
 *.log
 debug_output.txt
