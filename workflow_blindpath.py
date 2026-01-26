@@ -26,6 +26,19 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+YOLO_TRAFFIC_LIGHT_COLOR_MAP = {
+    "red": "red",
+    "stop": "red",
+    "countdown_stop": "red",
+    "red_light": "red",
+    "traffic_light_red": "red",
+    "green": "green",
+    "go": "green",
+    "countdown_go": "yellow",
+    "yellow": "yellow",
+    "traffic_light_yellow": "yellow",
+}
+
 # ========== 状态常量定义 ==========
 STATE_ONBOARDING = "ONBOARDING"
 STATE_NAVIGATING = "NAVIGATING"
@@ -289,13 +302,73 @@ class BlindPathNavigator:
         if self.traffic_light_yolo:
             try:
                 results = self.traffic_light_yolo.predict(image, verbose=False, conf=0.3)
-                # TODO: 解析 YOLO 结果，判断红绿灯颜色
-                pass
-            except:
-                pass
+                color, meta = self._parse_yolo_results(results)
+                if color and color != "unknown":
+                    logger.debug(f"[TrafficLight] YOLO detected {color} ({meta})")
+                    return color
+            except Exception as exc:
+                logger.info(f"[TrafficLight] YOLO parse failed: {exc}")
         
         # 使用 HSV 颜色检测作为后备方案
         return self._detect_traffic_light_by_color(image)
+
+    def _parse_yolo_results(self, results) -> Tuple[str, Dict[str, Any]]:
+        """解析 YOLO 推理结果，返回颜色与调试信息"""
+        best_color = "unknown"
+        best_conf = 0.0
+        meta: Dict[str, Any] = {"detections": 0}
+
+        if not results:
+            meta["reason"] = "no_results"
+            return best_color, meta
+
+        names = getattr(self.traffic_light_yolo, "names", {}) or {}
+        if not isinstance(names, dict):
+            names = {i: n for i, n in enumerate(names)}
+
+        for res in results:
+            boxes = getattr(res, "boxes", None)
+            if boxes is None:
+                continue
+            for box in boxes:
+                try:
+                    cls_val = box.cls
+                    cls_id = int(cls_val[0] if hasattr(cls_val, "__len__") else cls_val)
+                except Exception:
+                    continue
+
+                conf = 0.0
+                try:
+                    conf_val = box.conf
+                    conf = float(conf_val[0] if hasattr(conf_val, "__len__") else conf_val)
+                except Exception:
+                    pass
+
+                class_name = str(names.get(cls_id, f"class_{cls_id}")).strip().lower()
+                color = YOLO_TRAFFIC_LIGHT_COLOR_MAP.get(class_name)
+                if not color:
+                    continue
+
+                meta["detections"] += 1
+                if conf > best_conf:
+                    best_conf = conf
+                    best_color = color
+                    meta["selected_class"] = class_name
+                    meta["selected_conf"] = conf
+                    bbox = None
+                    try:
+                        xy = box.xyxy
+                        if hasattr(xy, "__len__") and len(xy) > 0:
+                            coords = xy[0]
+                            bbox = [float(coords[i]) for i in range(4)]
+                    except Exception:
+                        bbox = None
+                    if bbox:
+                        meta["selected_bbox"] = bbox
+
+        if best_color == "unknown":
+            meta["reason"] = "no_color_match"
+        return best_color, meta
     
     def _detect_traffic_light_by_color(self, image: np.ndarray) -> str:
         """基于 HSV 颜色空间检测红绿灯"""

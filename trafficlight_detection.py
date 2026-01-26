@@ -6,6 +6,12 @@
 """
 
 import os
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("YOLO_CONFIG_DIR", os.path.join(_BASE_DIR, ".ultralytics"))
+try:
+    os.makedirs(os.environ["YOLO_CONFIG_DIR"], exist_ok=True)
+except Exception:
+    pass
 import time
 import threading
 import cv2
@@ -18,7 +24,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ========= 配置参数 =========
-YOLO_MODEL_PATH = r"/home/lsc/code/OpenAIglasses_for_Navigation-main/model/trafficlight.pt"
+YOLO_MODEL_PATH = os.getenv("TRAFFIC_LIGHT_MODEL", os.path.join(_BASE_DIR, "model", "trafficlight.pt"))
 
 # ========= 显示参数 =========
 CONF_THRESHOLD = 0.25  # 置信度阈值
@@ -618,6 +624,4 @@ def reset_detection_state():
 
 if __name__ == "__main__":
     main(headless=False)
-
-
 

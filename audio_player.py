@@ -29,7 +29,8 @@ def _get_recorder():
     return _sync_recorder
 
 # 兼容旧工程中的示例音频（保留）
-AUDIO_BASE_DIR = r"/home/lsc/code/OpenAIglasses_for_Navigation-main/music"
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+AUDIO_BASE_DIR = os.getenv("AIGLASS_AUDIO_DIR", os.path.join(_BASE_DIR, "music"))
 
 # 新增：voice 目录与映射表
 # 使用脚本所在目录的 voice 文件夹，避免工作目录问题
@@ -38,15 +39,15 @@ VOICE_MAP_FILE = os.path.join(VOICE_DIR, "map.zh-CN.json")
 
 # 音频文件映射（将合并 voice 映射）
 AUDIO_MAP = {
-    "检测到物体": os.path.join(AUDIO_BASE_DIR, "音频1.wav"),
-    "向上": os.path.join(AUDIO_BASE_DIR, "音频2.wav"),
-    "向下": os.path.join(AUDIO_BASE_DIR, "音频3.wav"),
-    "向左": os.path.join(AUDIO_BASE_DIR, "音频4.wav"),
-    "向右": os.path.join(AUDIO_BASE_DIR, "音频5.wav"),
-    "OK": os.path.join(AUDIO_BASE_DIR, "音频6.wav"),
-    "向前": os.path.join(AUDIO_BASE_DIR, "音频7.wav"),
-    "后退": os.path.join(AUDIO_BASE_DIR, "音频8.wav"),
-    "拿到物体": os.path.join(AUDIO_BASE_DIR, "音频9.wav"),
+    "检测到物体": os.path.join(AUDIO_BASE_DIR, "converted_音频1.WAV"),
+    "向上": os.path.join(AUDIO_BASE_DIR, "converted_向上.wav"),
+    "向下": os.path.join(AUDIO_BASE_DIR, "converted_向下.wav"),
+    "向左": os.path.join(AUDIO_BASE_DIR, "converted_向左.wav"),
+    "向右": os.path.join(AUDIO_BASE_DIR, "converted_向右.wav"),
+    "OK": os.path.join(AUDIO_BASE_DIR, "converted_已对中.wav"),
+    "向前": os.path.join(AUDIO_BASE_DIR, "converted_向前.wav"),
+    "后退": os.path.join(AUDIO_BASE_DIR, "converted_向后.wav"),
+    "拿到物体": os.path.join(AUDIO_BASE_DIR, "converted_拿到啦.wav"),
 }
 
 # 音频缓存，避免重复读取

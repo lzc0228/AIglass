@@ -6,9 +6,10 @@ from typing import AsyncGenerator, Dict, Any, List, Optional, Tuple
 from openai import OpenAI
 
 # ===== OpenAI 兼容（达摩院 DashScope 兼容模式）=====
-API_KEY = os.getenv("DASHSCOPE_API_KEY", "sk-a9440db694924559ae4ebdc2023d2b9a")
+# API Key 从环境变量读取（也可在 .env 中配置）
+API_KEY = os.getenv("DASHSCOPE_API_KEY")
 if not API_KEY:
-    raise RuntimeError("未设置 DASHSCOPE_API_KEY")
+    raise RuntimeError("未设置 DASHSCOPE_API_KEY（请在环境变量或 .env 中配置）")
 
 QWEN_MODEL = "qwen-omni-turbo"
 
@@ -35,13 +36,17 @@ async def stream_chat(
     - 以 stream=True 返回
     - 增量产出：OmniStreamPiece(text_delta=?, audio_b64=?)
     """
+    # 构建请求参数，将 modalities 和 audio 参数放在 extra_body 中
+    extra_body = {
+        "modalities": ["text", "audio"],
+        "audio": {"voice": voice, "format": audio_format}
+    }
+    
     completion = oai_client.chat.completions.create(
         model=QWEN_MODEL,
         messages=[{"role": "user", "content": content_list}],
-        modalities=["text", "audio"],
-        audio={"voice": voice, "format": audio_format},
         stream=True,
-        stream_options={"include_usage": True},
+        extra_body=extra_body  # 使用 extra_body 传递达摩院特有参数
     )
 
     # 注意：OpenAI SDK 的流是同步迭代器；在 async 场景下逐项 yield

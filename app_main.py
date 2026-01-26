@@ -1,6 +1,13 @@
 # app_main.py
 # -*- coding: utf-8 -*-
 import os, sys, time, json, asyncio, base64, audioop
+# ---- Ultralytics 配置目录（避免在受限环境写 ~/.config）----
+_REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("YOLO_CONFIG_DIR", os.path.join(_REPO_DIR, ".ultralytics"))
+try:
+    os.makedirs(os.environ["YOLO_CONFIG_DIR"], exist_ok=True)
+except Exception:
+    pass
 from typing import Any, Dict, Optional, Tuple, List, Callable, Set, Deque
 from collections import deque
 from dataclasses import dataclass
@@ -23,17 +30,33 @@ import numpy as np
 from ultralytics import YOLO
 from obstacle_detector_client import ObstacleDetectorClient
 
+import torch  # 添加这行
+
+
 import mediapipe as mp
 import bridge_io
 import threading
 import yolomedia  # 确保和 app_main.py 同目录，文件名就是 yolomedia.py
+# ---- Windows 事件循环策略 ----
+if sys.platform.startswith("win"):
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
+
+# ---- .env ----
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 
 # ---- DashScope ASR 基础 ----
 from dashscope import audio as dash_audio  # 若未安装，会在原项目里抛错提示
 
-API_KEY = os.getenv("DASHSCOPE_API_KEY", "sk-a9440db694924559ae4ebdc2023d2b9a")
+API_KEY = os.getenv("DASHSCOPE_API_KEY")
 if not API_KEY:
-    raise RuntimeError("未设置 DASHSCOPE_API_KEY")
+    raise RuntimeError("未设置 DASHSCOPE_API_KEY（请在环境变量或 .env 中配置）")
 
 MODEL        = "paraformer-realtime-v2"
 SAMPLE_RATE  = 16000
@@ -58,6 +81,39 @@ from asr_core import (
     stop_current_recognition,
 )
 from audio_player import initialize_audio_system, play_voice_text
+from event_logger import get_event_logger
+
+# ---- 新功能模块 ----
+# 颜色识别模块
+from color_recognition import detect_color_from_frame
+# 夜间模式检测模块
+from night_mode import get_night_detector, set_night_mode_callback
+# OCR/读字模块
+from text_reader import read_text_from_frame
+# 语音调度器和风险评估
+from voice_scheduler import get_voice_scheduler, VoiceScheduler, get_risk_assessor
+# 朋友/人脸识别（本地离线优先）
+from face_friend_recognition import FaceFriendRecognizer
+# 灯光关闭提醒（轻量启发式）
+from light_reminder import get_light_detector
+# 语义输出模块（Top3 + 去冗余 + 模板生成）
+from semantic_output import get_semantic_engine
+# 物品搜索增强模块
+from item_search_enhancer import (
+    get_item_search_enhancer,
+    start_item_search as enhancer_start_search,
+    update_item_detection,
+    mark_item_found as enhancer_mark_found,
+    stop_item_search as enhancer_stop_search
+)
+# 音乐搜索模块
+from music_controller import (
+    get_music_searcher,
+    get_music_player,
+    search_music,
+    format_song_list,
+    SongInfo
+)
 
 # ---- 同步录制器 ----
 import sync_recorder
@@ -99,13 +155,45 @@ orchestrator = None  # 新增
 omni_conversation_active = False  # 标记omni对话是否正在进行
 omni_previous_nav_state = None  # 保存omni激活前的导航状态，用于恢复
 
+# 【新增】ESP32命令WebSocket连接（用于发送LED控制等指令）
+esp32_cmd_ws: Optional[WebSocket] = None
+esp32_cmd_lock = asyncio.Lock()
+
+# 【新增】夜间模式检测器
+night_detector = None
+night_mode_enabled = True  # 是否启用自动夜间检测
+
+# 【新增】语音调度器
+voice_scheduler = None
+
+# 【新增】物品搜索增强器
+item_search_enhancer = None
+
+# 【新增】朋友/人脸识别器
+face_friend_recognizer: Optional[FaceFriendRecognizer] = None
+
+# 【新增】灯光关闭提醒
+light_detector = None
+light_reminder_enabled = False
+
+# 【新增】场景探索 / 语义输出
+semantic_engine = None
+scene_exploration_enabled = False
+last_semantic_emit_ts = 0.0
+semantic_emit_interval_sec = float(os.getenv("AIGLASS_SEM_PERIOD_SEC", "3.0"))
+
+# 【新增】事件记录器（JSONL，用于回放/评估）
+event_logger = None
+
 # 【新增】模型加载函数
 def load_navigation_models():
     """加载盲道导航所需的模型"""
     global yolo_seg_model, obstacle_detector
 
     try:
-        seg_model_path = os.getenv("BLIND_PATH_MODEL", r"/home/lsc/code/OpenAIglasses_for_Navigation-main/model/yolo-seg.pt")
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        default_seg_model_path = os.path.join(base_dir, "model", "yolo-seg.pt")
+        seg_model_path = os.getenv("BLIND_PATH_MODEL", default_seg_model_path)
         #print(f"[NAVIGATION] 尝试加载模型: {seg_model_path}")
 
         if os.path.exists(seg_model_path):
@@ -138,7 +226,8 @@ def load_navigation_models():
             print(f"[NAVIGATION] 请检查文件路径是否正确")
             
         # 【修改开始】使用 ObstacleDetectorClient 替代直接的 YOLO
-        obstacle_model_path = os.getenv("OBSTACLE_MODEL", r"/home/lsc/code/OpenAIglasses_for_Navigation-main/model/yoloe-11l-seg.pt")
+        default_obstacle_model_path = os.path.join(base_dir, "model", "yoloe-11l-seg.pt")
+        obstacle_model_path = os.getenv("OBSTACLE_MODEL", default_obstacle_model_path)
         print(f"[NAVIGATION] 尝试加载障碍物检测模型: {obstacle_model_path}")
         
         if os.path.exists(obstacle_model_path):
@@ -302,6 +391,24 @@ async def ui_broadcast_final(text: str):
         recent_finals = recent_finals[-RECENT_MAX:]
     await ui_broadcast_raw("FINAL:" + text)
     print(f"[ASR/AI FINAL] {text}", flush=True)
+    # 记录结构化事件（不影响主流程）
+    try:
+        if event_logger is not None:
+            m = re.match(r"^\\[(.*?)\\]\\s*", text or "")
+            tag = m.group(1) if m else None
+            st = orchestrator.get_state() if orchestrator else None
+            event_logger.log(
+                {
+                    "type": "ui_final",
+                    "tag": tag,
+                    "text": text,
+                    "state": st,
+                    "imu_yaw_deg": globals().get("latest_yaw_deg"),
+                    "imu_yaw_rate_dps": globals().get("latest_yaw_rate_dps"),
+                }
+            )
+    except Exception:
+        pass
 
 async def full_system_reset(reason: str = ""):
     """
@@ -393,7 +500,7 @@ def stop_yolomedia():
 # ========= 自定义的 start_ai_with_text，支持识别特殊命令 =========
 async def start_ai_with_text_custom(user_text: str):
     """扩展版的AI启动函数，支持识别特殊命令"""
-    global navigation_active, blind_path_navigator, cross_street_active, cross_street_navigator, orchestrator
+    global navigation_active, blind_path_navigator, cross_street_active, cross_street_navigator, orchestrator, night_detector
     
     # 【修改】在导航模式和红绿灯检测模式下，只有特定词才进入omni对话
     if orchestrator:
@@ -403,6 +510,16 @@ async def start_ai_with_text_custom(user_text: str):
             # 检查是否是允许的对话触发词
             allowed_keywords = ["帮我看", "帮我看下", "帮我找", "找一下", "看看", "识别一下"]
             is_allowed_query = any(keyword in user_text for keyword in allowed_keywords)
+
+            # 允许在导航中触发的本地命令（不走 omni）
+            local_allow_patterns = [
+                r"^(这是|记住|认识|他叫|她叫|名叫|把他记成|把她记成)\\s*",
+                r"^(忘记|删除|移除)\\s*",
+                r"(这是谁|谁在我面前|识别朋友|识别人脸|朋友列表|有哪些朋友|我认识谁)",
+                r"(检查灯|灯关了吗|提醒我关灯|关灯提醒)",
+                r"(描述周围|周围有什么|场景探索|环境描述|语义描述)",
+            ]
+            is_local_allowed = any(re.search(p, user_text) for p in local_allow_patterns)
             
             # 检查是否是导航控制命令
             nav_control_keywords = ["开始过马路", "过马路结束", "开始导航", "盲道导航", "停止导航", "结束导航", 
@@ -410,7 +527,7 @@ async def start_ai_with_text_custom(user_text: str):
             is_nav_control = any(keyword in user_text for keyword in nav_control_keywords)
             
             # 如果既不是允许的查询，也不是导航控制命令，则丢弃
-            if not is_allowed_query and not is_nav_control:
+            if not is_allowed_query and not is_nav_control and not is_local_allowed:
                 mode_name = "红绿灯检测" if current_state == "TRAFFIC_LIGHT_DETECTION" else "导航"
                 print(f"[{mode_name}模式] 丢弃非对话语音: {user_text}")
                 return  # 直接丢弃，不进入omni
@@ -516,34 +633,52 @@ async def start_ai_with_text_custom(user_text: str):
         return    
 
     # 检查是否是"帮我找/识别一下xxx"的命令
-    # 扩展正则表达式，支持更多关键词
+    # 扩展正则表达式，支持更多关键词和多目标（用"和/以及/还有/并且/，/、"分隔）
     find_pattern = r"(?:^\s*帮我)?\s*找一下\s*(.+?)(?:。|！|？|$)"
     match = re.search(find_pattern, user_text)
-        
+
     if match:
-        # 提取中文物品名称
-        item_cn = match.group(1).strip()
-        if item_cn:
-            # 【新增】用本地映射 + Qwen 提取英文类名
+        # 提取中文物品名称（支持多目标）
+        items_text = match.group(1).strip()
+
+        # 分割多个物品（支持：和、以及、还有、并且、，、、）
+        separators = r'[和以及还有并且，、、]'
+        items_cn = re.split(separators, items_text)
+        items_cn = [item.strip() for item in items_cn if item.strip()]
+
+        print(f"[COMMAND] Finder request: {items_cn}", flush=True)
+
+        # 为每个物品提取英文类名
+        labels_en = []
+        for item_cn in items_cn:
             label_en, src = extract_english_label(item_cn)
-            print(f"[COMMAND] Finder request: '{item_cn}' -> '{label_en}' (src={src})", flush=True)
+            labels_en.append(label_en)
+            print(f"[COMMAND]   '{item_cn}' -> '{label_en}' (src={src})", flush=True)
 
-            # 【新增】切换到找物品模式（暂停导航）
-            if orchestrator:
-                orchestrator.start_item_search()
-                print(f"[ITEM_SEARCH] 已切换到找物品模式，状态: {orchestrator.get_state()}")
-            
-            # 【关键】把英文类名传给 yolomedia（它会在找不到类时自动切 YOLOE）
-            start_yolomedia_with_target(label_en)
+        # 【新增】使用物品搜索增强器
+        if item_search_enhancer:
+            item_search_enhancer.start_search(items_cn, labels_en)
+            print(f"[ITEM_SEARCH] 启动增强搜索，目标数量: {len(items_cn)}")
 
-            # 给前端/语音来个确认反馈
-            try:
-                await ui_broadcast_final(f"[找物品] 正在寻找 {item_cn}...")
-            except Exception:
-                pass
+        # 【新增】切换到找物品模式（暂停导航）
+        if orchestrator:
+            orchestrator.start_item_search()
+            print(f"[ITEM_SEARCH] 已切换到找物品模式，状态: {orchestrator.get_state()}")
 
-            return
-    
+        # 【关键】把第一个英文类名传给 yolomedia
+        start_yolomedia_with_target(labels_en[0] if labels_en else "unknown")
+
+        # 给前端/语音来个确认反馈
+        try:
+            if len(items_cn) == 1:
+                await ui_broadcast_final(f"[找物品] 正在寻找 {items_cn[0]}...")
+            else:
+                await ui_broadcast_final(f"[找物品] 开始寻找：{'、'.join(items_cn)}，共{len(items_cn)}个目标。")
+        except Exception:
+            pass
+
+        return
+
     # 检查是否是"找到了"的命令
     if "找到了" in user_text or "拿到了" in user_text:
         print("[COMMAND] Found command detected", flush=True)
@@ -565,7 +700,474 @@ async def start_ai_with_text_custom(user_text: str):
             await ui_broadcast_final("[找物品] 已找到物品。")
         
         return
-    
+
+    # ====== 新增命令：颜色识别 ======
+    color_keywords = ["这个是什么���色", "帮我看颜色", "看下颜色", "颜色识别", "这是啥颜色", "是什么颜色"]
+    if any(kw in user_text for kw in color_keywords):
+        print("[COLOR] 颜色识别命令触发", flush=True)
+
+        # 获取最新帧
+        if last_frames:
+            try:
+                _, jpeg_bytes = last_frames[-1]
+                arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+                bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+                if bgr is not None and bgr.size > 0:
+                    # 执行颜色识别
+                    result = detect_color_from_frame(bgr)
+                    print(f"[COLOR] 识别结果: {result}")
+
+                    # UI播报
+                    await ui_broadcast_final(f"[AI] {result['message']}")
+                    # 语音播报
+                    play_voice_text(result['message'])
+                else:
+                    await ui_broadcast_final("[AI] 无法获取画面，请检查摄像头。")
+            except Exception as e:
+                print(f"[COLOR] 颜色识别失败: {e}")
+                await ui_broadcast_final(f"[AI] 颜色识别失败: {e}")
+        else:
+            await ui_broadcast_final("[AI] 暂无画面，请稍后再试。")
+        return
+
+    # ====== 新增命令：OCR/读字 ======
+    ocr_keywords = ["读一下这上面写的什么", "识别文字", "读字", "读一下", "这是什么字", "写的是什么"]
+    if any(kw in user_text for kw in ocr_keywords):
+        print("[OCR] 通用读字命令触发", flush=True)
+
+        # 获取最新帧
+        if last_frames:
+            try:
+                _, jpeg_bytes = last_frames[-1]
+                arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+                bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+                if bgr is not None and bgr.size > 0:
+                    # 执行OCR
+                    result = read_text_from_frame(bgr, mode='general')
+                    print(f"[OCR] 识别结果: {result}")
+
+                    # UI播报
+                    await ui_broadcast_final(f"[AI] {result['message']}")
+                    # 语音播报
+                    play_voice_text(result['message'])
+                else:
+                    await ui_broadcast_final("[AI] 无法获取画面，请检查摄像头。")
+            except Exception as e:
+                print(f"[OCR] 读字失败: {e}")
+                await ui_broadcast_final(f"[AI] 读字失败: {e}")
+        else:
+            await ui_broadcast_final("[AI] 暂无画面，请稍后再试。")
+        return
+
+    # ====== 新增命令：公交车路线识别 ======
+    bus_keywords = ["公交车来了是哪一路", "帮我看公交几路", "这是几路车", "公交车是几路", "几路公交"]
+    if any(kw in user_text for kw in bus_keywords):
+        print("[OCR] 公交车路线识别命令触发", flush=True)
+
+        # 获取最新帧
+        if last_frames:
+            try:
+                _, jpeg_bytes = last_frames[-1]
+                arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+                bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+                if bgr is not None and bgr.size > 0:
+                    # 执行公交车OCR
+                    result = read_text_from_frame(bgr, mode='bus')
+                    print(f"[OCR] 公交识别结果: {result}")
+
+                    # UI播报
+                    await ui_broadcast_final(f"[AI] {result['message']}")
+                    # 语音播报
+                    play_voice_text(result['message'])
+                else:
+                    await ui_broadcast_final("[AI] 无法获取画面，请检查摄像头。")
+            except Exception as e:
+                print(f"[OCR] 公交识别失败: {e}")
+                await ui_broadcast_final(f"[AI] 公交识别失败: {e}")
+        else:
+            await ui_broadcast_final("[AI] 暂无画面，请稍后再试。")
+        return
+
+    # ====== 新增命令：朋友/人脸识别 ======
+    global face_friend_recognizer
+    face_recog_keywords = ["这是谁", "谁在我面前", "这人是谁", "识别朋友", "识别人脸", "认一下这个人", "认一下人", "认识他吗", "认识她吗"]
+    if any(kw in user_text for kw in face_recog_keywords):
+        if face_friend_recognizer is None:
+            await ui_broadcast_final("[AI] 人脸识别模块未初始化。")
+            return
+        if not last_frames:
+            await ui_broadcast_final("[AI] 暂无画面，请稍后再试。")
+            return
+        try:
+            _, jpeg_bytes = last_frames[-1]
+            arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+            bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            result = face_friend_recognizer.recognize(bgr)
+            msg = result.get("message", "识别失败。")
+            await ui_broadcast_final(f"[AI] {msg}")
+            play_voice_text(msg)
+        except Exception as e:
+            await ui_broadcast_final(f"[AI] 人脸识别失败: {e}")
+        return
+
+    face_list_keywords = ["朋友列表", "有哪些朋友", "我认识谁"]
+    if any(kw in user_text for kw in face_list_keywords):
+        if face_friend_recognizer is None:
+            await ui_broadcast_final("[AI] 人脸识别模块未初始化。")
+            return
+        people = face_friend_recognizer.list_people()
+        if not people:
+            msg = "我还没有录入任何朋友。你可以说：这是张三。"
+            await ui_broadcast_final(f"[AI] {msg}")
+            play_voice_text(msg)
+            return
+        brief = "、".join([p["name"] for p in people[:10]])
+        more = "等" if len(people) > 10 else ""
+        msg = f"我认识：{brief}{more}。"
+        await ui_broadcast_final(f"[AI] {msg}")
+        play_voice_text(msg)
+        return
+
+    if user_text.startswith("忘记") or user_text.startswith("删除") or user_text.startswith("移除"):
+        if face_friend_recognizer is None:
+            await ui_broadcast_final("[AI] 人脸识别模块未初始化。")
+            return
+        m = re.search(r"^(?:忘记|删除|移除)\\s*([\\u4e00-\\u9fffA-Za-z0-9]{1,16})", user_text.strip())
+        name = m.group(1).strip() if m else ""
+        result = face_friend_recognizer.forget(name)
+        msg = result.get("message", "操作失败。")
+        await ui_broadcast_final(f"[AI] {msg}")
+        play_voice_text(msg)
+        return
+
+    # 录入朋友：优先匹配明确口令，避免与“这是几路车”等冲突
+    if re.search(r"^(这是|记住|认识|他叫|她叫|名叫|把他记成|把她记成)\\s*", user_text.strip()) and ("几路" not in user_text) and ("公交" not in user_text):
+        if face_friend_recognizer is None:
+            await ui_broadcast_final("[AI] 人脸识别模块未初始化。")
+            return
+        if not last_frames:
+            await ui_broadcast_final("[AI] 暂无画面，请稍后再试。")
+            return
+        info = FaceFriendRecognizer.parse_name_gender_age(user_text)
+        name = info.get("name")
+        if not name:
+            msg = "我没听清名字。你可以说：这是张三，男，30岁。"
+            await ui_broadcast_final(f"[AI] {msg}")
+            play_voice_text(msg)
+            return
+        try:
+            _, jpeg_bytes = last_frames[-1]
+            arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+            bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            result = face_friend_recognizer.enroll(bgr, name=name, gender=info.get("gender"), age=info.get("age"))
+            msg = result.get("message", "录入失败。")
+            await ui_broadcast_final(f"[AI] {msg}")
+            play_voice_text(msg)
+        except Exception as e:
+            await ui_broadcast_final(f"[AI] 录入失败: {e}")
+        return
+
+    # ====== 新增命令：灯光关闭提醒 ======
+    global light_detector, light_reminder_enabled
+
+    light_check_keywords = ["灯关了吗", "检查灯", "检查灯有没有关", "灯有没有关", "帮我看看灯关了没"]
+    if any(kw in user_text for kw in light_check_keywords):
+        if light_detector is None:
+            try:
+                light_detector = get_light_detector()
+            except Exception as e:
+                await ui_broadcast_final(f"[AI] 灯光检测模块初始化失败: {e}")
+                return
+        if not last_frames:
+            await ui_broadcast_final("[AI] 暂无画面，请稍后再试。")
+            return
+        try:
+            _, jpeg_bytes = last_frames[-1]
+            arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+            bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            result = light_detector.check_once(bgr)
+            msg = result.get("message", "检查失败。")
+            await ui_broadcast_final(f"[AI] {msg}")
+            play_voice_text(msg)
+        except Exception as e:
+            await ui_broadcast_final(f"[AI] 检查灯光失败: {e}")
+        return
+
+    if ("提醒我关灯" in user_text) or ("开启关灯提醒" in user_text) or ("打开关灯提醒" in user_text) or (user_text.strip() == "关灯提醒"):
+        if light_detector is None:
+            try:
+                light_detector = get_light_detector()
+            except Exception as e:
+                await ui_broadcast_final(f"[AI] 灯光检测模块初始化失败: {e}")
+                return
+        light_reminder_enabled = True
+        msg = "好的，我会帮你留意灯是否忘关。"
+        await ui_broadcast_final(f"[AI] {msg}")
+        play_voice_text(msg)
+        return
+
+    if ("关闭关灯提醒" in user_text) or ("停止关灯提醒" in user_text) or ("关掉关灯提醒" in user_text):
+        light_reminder_enabled = False
+        msg = "好的，已关闭关灯提醒。"
+        await ui_broadcast_final(f"[AI] {msg}")
+        play_voice_text(msg)
+        return
+
+    # ====== 新增命令：场景探索 / 语义描述 ======
+    global semantic_engine, scene_exploration_enabled, last_semantic_emit_ts
+
+    if ("开启场景探索" in user_text) or ("打开场景探索" in user_text) or ("持续描述" in user_text):
+        if semantic_engine is None:
+            try:
+                semantic_engine = get_semantic_engine()
+            except Exception as e:
+                await ui_broadcast_final(f"[AI] 语义输出模块初始化失败: {e}")
+                return
+        scene_exploration_enabled = True
+        last_semantic_emit_ts = 0.0
+        msg = "好的，我会在对话模式下持续描述关键物体。"
+        await ui_broadcast_final(f"[AI] {msg}")
+        play_voice_text(msg)
+        return
+
+    if ("关闭场景探索" in user_text) or ("停止场景探索" in user_text):
+        scene_exploration_enabled = False
+        msg = "好的，已关闭场景探索。"
+        await ui_broadcast_final(f"[AI] {msg}")
+        play_voice_text(msg)
+        return
+
+    if ("重新加载语义权重" in user_text) or ("刷新语义权重" in user_text):
+        if semantic_engine is None:
+            try:
+                semantic_engine = get_semantic_engine()
+            except Exception as e:
+                await ui_broadcast_final(f"[AI] 语义输出模块初始化失败: {e}")
+                return
+        try:
+            semantic_engine.reload_weights()
+            msg = "好的，语义权重已重新加载。"
+            await ui_broadcast_final(f"[AI] {msg}")
+            play_voice_text(msg)
+        except Exception as e:
+            await ui_broadcast_final(f"[AI] 重新加载失败: {e}")
+        return
+
+    semantic_once_keywords = ["描述周围", "周围有什么", "环境描述", "语义描述", "场景探索"]
+    if any(kw in user_text for kw in semantic_once_keywords):
+        if semantic_engine is None:
+            try:
+                semantic_engine = get_semantic_engine()
+            except Exception as e:
+                await ui_broadcast_final(f"[AI] 语义输出模块初始化失败: {e}")
+                return
+        if not last_frames:
+            await ui_broadcast_final("[AI] 暂无画面，请稍后再试。")
+            return
+        try:
+            _, jpeg_bytes = last_frames[-1]
+            arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+            bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if bgr is None or bgr.size == 0:
+                await ui_broadcast_final("[AI] 无法获取画面，请检查摄像头。")
+                return
+            h, w = bgr.shape[:2]
+            mean_luma = float(np.mean(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)))
+            raw_objs = obstacle_detector.detect(bgr) if obstacle_detector is not None else []
+            out = semantic_engine.describe(
+                raw_objs,
+                frame_w=w,
+                frame_h=h,
+                mean_luma=mean_luma,
+                imu_yaw_deg=latest_yaw_deg,
+                imu_yaw_rate_dps=latest_yaw_rate_dps,
+            )
+            try:
+                if event_logger is not None:
+                    event_logger.log({"type": "semantic_once", "state": orchestrator.get_state() if orchestrator else None, "payload": out})
+            except Exception:
+                pass
+            msg = out.get("text") or "我暂时无法生成描述。"
+            await ui_broadcast_final(f"[导航] {msg}")
+            play_voice_text(msg)
+        except Exception as e:
+            await ui_broadcast_final(f"[AI] 场景描述失败: {e}")
+        return
+
+    # ====== 新增命令：夜间模式手动控制 ======
+    if "打开夜间模式" in user_text or "开启夜间模式" in user_text:
+        if night_detector:
+            night_detector.force_mode(True)
+            await ui_broadcast_final("[系统] 已手动开启夜间模式。")
+            await send_esp32_command({"type": "NIGHT", "on": True, "mode": "LOW_BEACON"})
+        else:
+            await ui_broadcast_final("[系统] 夜间模式未初始化。")
+        return
+
+    if "关闭夜间模式" in user_text:
+        if night_detector:
+            night_detector.force_mode(False)
+            await ui_broadcast_final("[系统] 已手动关闭夜间模式。")
+            await send_esp32_command({"type": "NIGHT", "on": False, "mode": "OFF"})
+        else:
+            await ui_broadcast_final("[系统] 夜间模式未初始化。")
+        return
+
+    # ====== 新增命令：音乐搜索/点歌 ======
+    music_keywords = [
+        "我想听", "来一首", "播放", "点歌", "放首歌", "我想听歌",
+        "来点音乐", "放音乐", "听听歌", "帮我放歌"
+    ]
+    if any(kw in user_text for kw in music_keywords):
+        print("[MUSIC] 音乐搜索命令触发", flush=True)
+
+        # 提取搜索关键词
+        import re
+        # 尝试多种模式提取歌名
+        patterns = [
+            r"我想听\s*(.+?)(?:。|！|？|$)",
+            r"来一首\s*(.+?)(?:。|！|？|$)",
+            r"播放\s*(.+?)(?:。|！|？|$)",
+            r"点歌\s*(.+?)(?:。|！|？|$)",
+            r"放首歌\s*(.+?)(?:。|！|？|$)",
+            r"放音乐\s*(.+?)(?:。|！|？|$)",
+            r"来点音乐\s*(.+?)(?:。|！|？|$)",
+        ]
+
+        search_keyword = None
+        for pattern in patterns:
+            match = re.search(pattern, user_text)
+            if match:
+                search_keyword = match.group(1).strip()
+                break
+
+        if not search_keyword:
+            # 如果没有匹配到，尝试去掉关键词后的内容
+            for kw in music_keywords:
+                if kw in user_text:
+                    search_keyword = user_text.replace(kw, "").strip()
+                    if search_keyword:
+                        break
+
+        if search_keyword:
+            try:
+                await ui_broadcast_partial("[AI] 正在搜索音乐，请稍候...")
+                print(f"[MUSIC] 搜索关键词: {search_keyword}")
+
+                # 异步搜索音乐
+                songs = await search_music(search_keyword, source="migu", limit=5)
+
+                if songs:
+                    # 保存到播放器
+                    player = get_music_player()
+                    player.set_queue(songs)
+
+                    # 播报搜索结果
+                    result_text = format_song_list(songs[:5], max_count=5)
+                    await ui_broadcast_final(f"[音乐] {result_text}")
+
+                    # 同时发送播放链接给ESP32（如果有播放功能）
+                    first_song = songs[0]
+                    await send_esp32_command({
+                        "type": "MUSIC",
+                        "action": "search_result",
+                        "songs": [
+                            {
+                                "name": s.name,
+                                "artists": s.artists,
+                                "url": s.url,
+                                "index": i
+                            }
+                            for i, s in enumerate(songs[:5])
+                        ]
+                    })
+                else:
+                    await ui_broadcast_final("[音乐] 抱歉，没有找到相关歌曲。请换个关键词试试。")
+
+            except Exception as e:
+                print(f"[MUSIC] 搜索失败: {e}")
+                await ui_broadcast_final(f"[音乐] 搜索失败: {e}")
+        else:
+            await ui_broadcast_final("[音乐] 请告诉我你想听什么歌，比如：我想听周杰伦的稻香。")
+        return
+
+    # 音乐播放控制
+    play_control_keywords = ["下一首", "上一首", "暂停", "继续播放", "停止播放", "重新播放"]
+    if any(kw in user_text for kw in play_control_keywords):
+        player = get_music_player()
+
+        if "下一首" in user_text:
+            song = player.next()
+            if song:
+                await ui_broadcast_final(f"[音乐] 正在播放：{song.artists}的{song.name}")
+                await send_esp32_command({
+                    "type": "MUSIC",
+                    "action": "play",
+                    "url": song.url,
+                    "name": song.name,
+                    "artists": song.artists
+                })
+            else:
+                await ui_broadcast_final("[音乐] 播放列表为空，请先搜索歌曲。")
+
+        elif "上一首" in user_text:
+            song = player.prev()
+            if song:
+                await ui_broadcast_final(f"[音乐] 正在播放：{song.artists}的{song.name}")
+                await send_esp32_command({
+                    "type": "MUSIC",
+                    "action": "play",
+                    "url": song.url,
+                    "name": song.name,
+                    "artists": song.artists
+                })
+            else:
+                await ui_broadcast_final("[音乐] 播放列表为空，请先搜索歌曲。")
+
+        elif "暂停" in user_text or "停止" in user_text:
+            await ui_broadcast_final("[音乐] 已暂停播放")
+            await send_esp32_command({"type": "MUSIC", "action": "pause"})
+
+        elif "继续" in user_text:
+            await ui_broadcast_final("[音乐] 继续播放")
+            await send_esp32_command({"type": "MUSIC", "action": "resume"})
+
+        elif "重新" in user_text:
+            song = player.play_index(0)
+            if song:
+                await ui_broadcast_final(f"[音乐] 重新播放：{song.artists}的{song.name}")
+                await send_esp32_command({
+                    "type": "MUSIC",
+                    "action": "play",
+                    "url": song.url,
+                    "name": song.name,
+                    "artists": song.artists
+                })
+        return
+
+    # 播放指定编号的歌曲
+    play_number_match = re.search(r"播放第(\d+)首|第(\d+)首|来第(\d+)首", user_text)
+    if play_number_match:
+        player = get_music_player()
+        song_num = int(play_number_match.group(1) or play_number_match.group(2) or play_number_match.group(3))
+        song = player.play_index(song_num - 1)  # 转换为0-based索引
+
+        if song:
+            await ui_broadcast_final(f"[音乐] 正在播放：{song.artists}的{song.name}")
+            await send_esp32_command({
+                "type": "MUSIC",
+                "action": "play",
+                "url": song.url,
+                "name": song.name,
+                "artists": song.artists
+            })
+        else:
+            await ui_broadcast_final(f"[音乐] 第{song_num}首不存在，请先搜索歌曲。")
+        return
+
     # 【修改】omni对话开始时，切换到CHAT模式
     global omni_conversation_active, omni_previous_nav_state
     omni_conversation_active = True
@@ -773,8 +1375,18 @@ async def ws_audio(ws: WebSocket):
             if "text" in msg and msg["text"] is not None:
                 raw = (msg["text"] or "").strip()
                 cmd = raw.upper()
+                # 在 ws_audio 函数内添加全局/局部变量记录最后一次START时间
+                last_start_time = 0  # 新增：记录最后一次START指令时间
+                START_COOLDOWN = 1.0  # 1秒冷却时间
 
                 if cmd == "START":
+                    current_time = time.monotonic()
+                    if current_time - last_start_time < START_COOLDOWN:
+                        print(f"[AUDIO] 忽略重复START指令（冷却中）")
+                        await ws.send_text("ERR:TOO_FAST")
+                        continue
+                    last_start_time = current_time
+
                     print("[AUDIO] START received")
                     await stop_rec()
                     loop = asyncio.get_running_loop()
@@ -847,6 +1459,7 @@ async def ws_audio(ws: WebSocket):
 @app.websocket("/ws/camera")
 async def ws_camera_esp(ws: WebSocket):
     global esp32_camera_ws, blind_path_navigator, cross_street_navigator, cross_street_active, navigation_active, orchestrator
+    global last_semantic_emit_ts, scene_exploration_enabled
     if esp32_camera_ws is not None:
         await ws.close(code=1013)
         return
@@ -884,6 +1497,77 @@ async def ws_camera_esp(ws: WebSocket):
     if orchestrator is None and blind_path_navigator is not None and cross_street_navigator is not None:
         orchestrator = NavigationMaster(blind_path_navigator, cross_street_navigator)
         print("[NAV MASTER] 统领状态机已初始化（托管模式）")
+
+    # 【新增】初始化语音调度器
+    global voice_scheduler
+    if voice_scheduler is None:
+        voice_scheduler = get_voice_scheduler()
+        voice_scheduler.set_play_callback(play_voice_text)
+        print("[VOICE_SCHED] 语音调度器已初始化")
+
+    # 【新增】初始化物品搜索增强器
+    global item_search_enhancer
+    if item_search_enhancer is None:
+        item_search_enhancer = get_item_search_enhancer()
+
+        # 设置引导回调（使用 play_voice_text）
+        item_search_enhancer.set_guidance_callback(play_voice_text)
+
+        # 设置找到目标回调（UI播报）
+        async def on_target_found(target):
+            """找到目标时的回调"""
+            try:
+                await ui_broadcast_final(f"[找物品] 找到{target.name_cn}了！")
+            except Exception:
+                pass
+
+        # 设置目标完成回调
+        async def on_target_complete(target):
+            """目标完成时的回调"""
+            try:
+                await ui_broadcast_final(f"[找物品] {target.name_cn}已完成。")
+            except Exception:
+                pass
+
+        # 注意：由于回调是异步的，这里需要特殊处理
+        # 暂时使用同步回调，在回调中通过 asyncio 处理
+        import asyncio
+        loop = asyncio.get_running_loop()
+
+        def sync_on_target_found(target):
+            asyncio.create_task(on_target_found(target))
+
+        def sync_on_target_complete(target):
+            asyncio.create_task(on_target_complete(target))
+
+        item_search_enhancer.set_target_found_callback(sync_on_target_found)
+        item_search_enhancer.set_target_complete_callback(sync_on_target_complete)
+
+        print("[ITEM_SEARCH] 物品搜索增强器已初始化")
+
+    # 【新增】初始化夜间模式检测器并设置回调
+    global night_detector
+    if night_detector is None and night_mode_enabled:
+        night_detector = get_night_detector()
+
+        async def on_night_mode_change(is_night: bool):
+            """夜间模式切换回调"""
+            mode = "夜间" if is_night else "日间"
+            print(f"[NIGHT_MODE] 切换到{mode}模式")
+
+            # UI播报
+            await ui_broadcast_final(f"[导航] 已进入{'夜间' if is_night else '日间'}模式。")
+
+            # 发送ESP32指令
+            await send_esp32_command({
+                "type": "NIGHT",
+                "on": is_night,
+                "mode": "LOW_BEACON" if is_night else "OFF"
+            })
+
+        set_night_mode_callback(on_night_mode_change)
+        print("[NIGHT_MODE] 夜间检测器已初始化")
+
     frame_counter = 0  # 添加帧计数器
     
     try:
@@ -926,6 +1610,61 @@ async def ws_camera_esp(ws: WebSocket):
                     if frame_counter % 30 == 0:
                         print(f"[JPEG] 解码异常: {e}")
                     bgr = None
+
+                # 【新增】夜间模式检测（每帧检查，但内部按间隔采样）
+                if night_detector is not None and bgr is not None:
+                    try:
+                        night_result = night_detector.process_frame(bgr)
+                        if night_result.get('changed', False):
+                            # 夜间模式切换回调已在初始化时设置
+                            pass
+                    except Exception as e:
+                        if frame_counter % 100 == 0:
+                            print(f"[NIGHT_MODE] 检测失败: {e}")
+
+                # 【新增】灯光关闭提醒（开启后才检测；尽量不打断导航）
+                if light_detector is not None and light_reminder_enabled and bgr is not None:
+                    try:
+                        st = orchestrator.get_state() if orchestrator else "CHAT"
+                        if st in ("CHAT", "IDLE"):
+                            lr = light_detector.process_frame(bgr)
+                            if lr.get("should_remind", False) and lr.get("is_on", False):
+                                msg = "我检测到灯可能还开着，记得关灯。"
+                                play_voice_text(msg)
+                                await ui_broadcast_final(f"[AI] {msg}")
+                    except Exception as e:
+                        if frame_counter % 200 == 0:
+                            print(f"[LIGHT] 检测失败: {e}")
+
+                # 【新增】场景探索：周期性输出 Top-3 关键物体的可执行提示（仅在非导航模式）
+                if semantic_engine is not None and scene_exploration_enabled and bgr is not None:
+                    try:
+                        st = orchestrator.get_state() if orchestrator else "CHAT"
+                        now_ts = time.time()
+                        if st in ("CHAT", "IDLE") and (now_ts - last_semantic_emit_ts) >= semantic_emit_interval_sec:
+                            h, w = bgr.shape[:2]
+                            mean_luma = float(np.mean(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY))) if bgr is not None else None
+                            raw_objs = obstacle_detector.detect(bgr) if obstacle_detector is not None else []
+                            out = semantic_engine.describe(
+                                raw_objs,
+                                frame_w=w,
+                                frame_h=h,
+                                mean_luma=mean_luma,
+                                imu_yaw_deg=latest_yaw_deg,
+                                imu_yaw_rate_dps=latest_yaw_rate_dps,
+                            )
+                            try:
+                                if event_logger is not None:
+                                    event_logger.log({"type": "semantic_auto", "state": st, "payload": out})
+                            except Exception:
+                                pass
+                            if out.get("should_speak", False) and out.get("text"):
+                                play_voice_text(out["text"])
+                                await ui_broadcast_final(f"[导航] {out['text']}")
+                            last_semantic_emit_ts = now_ts
+                    except Exception as e:
+                        if frame_counter % 200 == 0:
+                            print(f"[SEMANTIC] 输出失败: {e}")
 
                 # 【托管】优先交给统领状态机（寻物未占用画面时）
                 # 【修改】找物品模式时不执行导航处理，让yolomedia接管画面
@@ -1081,6 +1820,49 @@ async def imu_broadcast(msg: str):
     for ws in dead:
         imu_ws_clients.discard(ws)
 
+# ---------- ESP32命令WebSocket（用于LED控制等） ----------
+async def send_esp32_command(command: Dict[str, Any]):
+    """
+    发送命令给ESP32
+    :param command: 命令字典，如 {"type": "LED", "mode": "BLINK"}
+    """
+    global esp32_cmd_ws
+    if esp32_cmd_ws is None:
+        print(f"[ESP32_CMD] 无ESP32命令连接，命令未发送: {command}")
+        return False
+
+    try:
+        async with esp32_cmd_lock:
+            await esp32_cmd_ws.send_json(command)
+        print(f"[ESP32_CMD] 命令已发送: {command}")
+        return True
+    except Exception as e:
+        print(f"[ESP32_CMD] 发送命令失败: {e}")
+        return False
+
+@app.websocket("/ws/cmd")
+async def ws_esp32_command(ws: WebSocket):
+    """ESP32命令WebSocket - ESP32连接此端口接收控制命令"""
+    global esp32_cmd_ws
+    await ws.accept()
+    esp32_cmd_ws = ws
+    print("[ESP32_CMD] ESP32命令连接已建立")
+
+    try:
+        while True:
+            # 接收ESP32的ACK响应
+            msg = await ws.receive()
+            if "text" in msg:
+                try:
+                    data = json.loads(msg["text"])
+                    print(f"[ESP32_CMD] 收到ESP32响应: {data}")
+                except:
+                    print(f"[ESP32_CMD] 收到ESP32消息: {msg['text']}")
+    except WebSocketDisconnect:
+        print("[ESP32_CMD] ESP32命令连接断开")
+    finally:
+        esp32_cmd_ws = None
+
 # ---------- 服务端 IMU 估计（原样保留） ----------
 from math import atan2, hypot, pi
 GRAV_BETA   = 0.98
@@ -1105,6 +1887,13 @@ last_ts_imu = 0.0
 last_wall = 0.0
 imu_store: List[Dict[str, Any]] = []
 
+# 【新增】为语义输出/闭环稳定提供的 IMU 快照
+latest_yaw_deg: float = 0.0
+latest_yaw_rate_dps: float = 0.0
+latest_yaw_ts: float = 0.0
+_prev_yaw_for_rate: Optional[float] = None
+_prev_yaw_ts_for_rate: float = 0.0
+
 def _wrap180(a: float) -> float:
     a = a % 360.0
     if a >= 180.0: a -= 360.0
@@ -1113,6 +1902,7 @@ def _wrap180(a: float) -> float:
 
 def process_imu_and_maybe_store(d: Dict[str, Any]):
     global gLP, gOff, yaw, Rf, Pf, Yf, ref, holdStart, isStill, last_ts_imu, last_wall
+    global latest_yaw_deg, latest_yaw_rate_dps, latest_yaw_ts, _prev_yaw_for_rate, _prev_yaw_ts_for_rate
 
     t_ms = float(d.get("ts", 0.0))
     now_wall = time.monotonic()
@@ -1182,6 +1972,17 @@ def process_imu_and_maybe_store(d: Dict[str, Any]):
     R = _wrap180(Rf - ref["roll"])
     P = _wrap180(Pf - ref["pitch"])
     Y = _wrap180(Yf - ref["yaw"])
+
+    # 更新给“语义输出/稳定性”用的快照（单位：deg / deg/s）
+    now_ts_sec = t_ms / 1000.0
+    latest_yaw_deg = float(Y)
+    latest_yaw_ts = float(now_ts_sec)
+    if _prev_yaw_for_rate is not None and now_ts_sec > _prev_yaw_ts_for_rate:
+        dt_rate = now_ts_sec - _prev_yaw_ts_for_rate
+        dy = _wrap180(float(Y) - float(_prev_yaw_for_rate))
+        latest_yaw_rate_dps = float(dy / max(1e-6, dt_rate))
+    _prev_yaw_for_rate = float(Y)
+    _prev_yaw_ts_for_rate = float(now_ts_sec)
 
     now_wall = time.monotonic()
     if last_wall <= 0.0 or (now_wall - last_wall) >= 0.100:
@@ -1268,6 +2069,53 @@ async def on_startup_init_audio():
     threading.Thread(target=_init, daemon=True).start()
 
 @app.on_event("startup")
+async def on_startup_init_event_logger():
+    """启动时初始化事件记录器（JSONL）"""
+    global event_logger
+    try:
+        event_logger = get_event_logger()
+        if getattr(event_logger, "enabled", False):
+            print(f"[EVENT] 事件记录已开启: {getattr(event_logger, 'path', '')}")
+        else:
+            print("[EVENT] 事件记录未开启")
+    except Exception as e:
+        event_logger = None
+        print(f"[EVENT] 初始化失败: {e}")
+
+@app.on_event("startup")
+async def on_startup_init_face_friend():
+    """启动时初始化本地人脸/朋友识别模块"""
+    global face_friend_recognizer
+    try:
+        face_friend_recognizer = FaceFriendRecognizer()
+        print("[FACE] 人脸/朋友识别器已初始化")
+    except Exception as e:
+        face_friend_recognizer = None
+        print(f"[FACE] 人脸/朋友识别器初始化失败: {e}")
+
+@app.on_event("startup")
+async def on_startup_init_light_reminder():
+    """启动时初始化灯光关闭提醒模块（默认不启用提醒）"""
+    global light_detector
+    try:
+        light_detector = get_light_detector()
+        print("[LIGHT] 灯光检测器已初始化")
+    except Exception as e:
+        light_detector = None
+        print(f"[LIGHT] 灯光检测器初始化失败: {e}")
+
+@app.on_event("startup")
+async def on_startup_init_semantic_engine():
+    """启动时初始化语义输出模块（用于场景探索/结构化输出）"""
+    global semantic_engine
+    try:
+        semantic_engine = get_semantic_engine()
+        print("[SEMANTIC] 语义输出模块已初始化")
+    except Exception as e:
+        semantic_engine = None
+        print(f"[SEMANTIC] 语义输出模块初始化失败: {e}")
+
+@app.on_event("startup")
 async def on_startup():
     loop = asyncio.get_running_loop()
     await loop.create_datagram_endpoint(lambda: UDPProto(), local_addr=(UDP_IP, UDP_PORT))
@@ -1282,6 +2130,13 @@ async def on_shutdown():
     
     # 停止音频和AI任务
     await hard_reset_audio("shutdown")
+
+    # 关闭事件记录器（可选）
+    try:
+        if event_logger is not None:
+            event_logger.close()
+    except Exception:
+        pass
     
     print("[SHUTDOWN] 资源清理完成")
 

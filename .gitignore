@@ -1,0 +1,14 @@
+.env
+.ultralytics/
+context/faces/
+recordings/
+__pycache__/
+*.pyc
+.specstory/
+music_downloads/
+*.out
+*.log
+debug_output.txt
+output.txt
+compile.zip
+musicn-1.5.0.tar.gz

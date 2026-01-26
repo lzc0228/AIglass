@@ -1,5 +1,11 @@
 # app/models.py
 import os
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("YOLO_CONFIG_DIR", os.path.join(_BASE_DIR, ".ultralytics"))
+try:
+    os.makedirs(os.environ["YOLO_CONFIG_DIR"], exist_ok=True)
+except Exception:
+    pass
 import logging
 import torch
 from threading import Semaphore

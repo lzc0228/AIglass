@@ -97,8 +97,8 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/yourusername/aiglass.git
-cd aiglass/rebuild1002
+git clone <repo_url>
+cd OpenAIglasses_for_Navigation-main
 ```
 
 ### 2. 安装依赖
@@ -134,17 +134,11 @@ pip install -r requirements.txt
 
 ### 4. 配置 API 密钥
 
-创建 `.env` 文件：
+创建 `.env` 文件（推荐从模板复制）：
 
 ```bash
-# .env
-DASHSCOPE_API_KEY=your_api_key_here
-```
-
-或在代码中直接修改（不推荐）：
-```python
-# app_main.py, line 50
-API_KEY = "your_api_key_here"
+cp .env.example .env
+# 然后编辑 .env，填入你的 DASHSCOPE_API_KEY
 ```
 
 ### 5. 启动系统
@@ -282,6 +276,30 @@ python app_main.py
 任何其他问题                 → AI 对话
 ```
 
+#### 朋友/人脸识别（本地）
+```
+"这是谁" / "谁在我面前"                 → 识别朋友（基于本地人脸库）
+"这是张三" / "记住他叫张三"             → 录入朋友
+"这是张三，男，30岁"                    → 录入并保存性别/年龄（可选）
+"朋友列表" / "我认识谁"                 → 查看已录入朋友
+"忘记张三" / "删除张三"                 → 删除朋友档案（不强制删图片）
+```
+
+#### 灯光关闭提醒（启发式）
+```
+"灯关了吗" / "检查灯有没有关"           → 一次性检查灯是否可能仍开启
+"提醒我关灯" / "开启关灯提醒"           → 开启常驻提醒（仅在对话模式下工作）
+"关闭关灯提醒" / "停止关灯提醒"         → 关闭常驻提醒
+```
+
+#### 场景探索 / 语义描述（Top-3 + 去冗余）
+```
+"周围有什么" / "描述周围" / "场景探索"   → 一次性输出 Top-3 关键物体的可执行提示
+"开启场景探索"                           → 在对话模式下周期性输出（默认每 3 秒一次）
+"关闭场景探索"                           → 关闭周期性输出
+"重新加载语义权重"                       → 重新加载 context/weights 与 user_prefs
+```
+
 ### 导航状态说明
 
 系统包含以下主要状态（自动切换）：
@@ -363,7 +381,21 @@ AIGLASS_PANEL_SCALE=0.65        # 数据面板缩放
 # 音频配置
 TTS_INTERVAL_SEC=1.0            # 语音播报间隔
 ENABLE_TTS=true                 # 启用语音播报
+
+# 朋友/人脸识别（可选）
+AIGLASS_FACE_DB_DIR=context/faces
+AIGLASS_FACE_MATCH_THRESHOLD=65
+
+# 场景探索/语义输出（可选）
+AIGLASS_SEM_PERIOD_SEC=3.0
+AIGLASS_WEIGHTS_DIR=context/weights
+AIGLASS_USER_PREFS=context/user_prefs.json
+
+# 事件记录（可选，JSONL 用于回放/评估）
+AIGLASS_EVENT_LOG=1
 ```
+
+完整可选参数请参考 `.env.example`。
 
 ### 修改模型路径
 
@@ -506,5 +538,3 @@ python test_recorder.py
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
-
-

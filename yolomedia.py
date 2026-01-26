@@ -14,6 +14,12 @@ YOLOv8 单类分割 + MediaPipe Hand Landmarker + 光流追踪（多边形）
 """
 
 import os
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("YOLO_CONFIG_DIR", os.path.join(_BASE_DIR, ".ultralytics"))
+try:
+    os.makedirs(os.environ["YOLO_CONFIG_DIR"], exist_ok=True)
+except Exception:
+    pass
 import time
 import threading
 import math
@@ -24,7 +30,10 @@ from mediapipe.framework.formats import landmark_pb2
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Colors
 import bridge_io
-import pygame  # 用于播放本地音频文件
+try:
+    import pygame  # 用于播放本地音频文件（可选）
+except Exception:
+    pygame = None
 
 from audio_player import play_audio_threadsafe
 PERF_DEBUG = False        # 打印调试信息（False 关闭）
@@ -92,8 +101,8 @@ except Exception as e:
     print(f"[DETECTOR] YOLOE backend not ready: {e}", flush=True)
 
 # ========= 路径参数（按需修改）=========
-YOLO_MODEL_PATH = r'/home/lsc/code/OpenAIglasses_for_Navigation-main/model/shoppingbest5.pt'
-HAND_TASK_PATH  = r"/home/lsc/code/OpenAIglasses_for_Navigation-main/model/hand_landmarker.task"
+YOLO_MODEL_PATH = os.getenv("ITEM_SEARCH_MODEL", os.path.join(_BASE_DIR, "model", "shoppingbest5.pt"))
+HAND_TASK_PATH = os.getenv("HAND_LANDMARKER_TASK", os.path.join(_BASE_DIR, "model", "hand_landmarker.task"))
 
 # ========= 摄像头 =========
 CAM_INDEX = 0
@@ -142,8 +151,8 @@ TRACK_EPSILON_FACTOR = 0.003    # 追踪模式下的轮廓精度因子
 YOLO_CORRECTION_IOU_THRESHOLD = 0.2  # IoU阈值，越低越积极矫正
 YOLO_CORRECTION_CONF_THRESHOLD = 0.15  # 置信度阈值，越低检测越敏感
 
-# ========= 方向引导音频路径 =========
-AUDIO_DIR = r"E:\沙粒云\自媒体\2025视频制作\20250925AI眼镜\AI眼镜合并\audio"  # 请修改为实际路径
+# ========= 方向引导音频路径（可选：当前流程主要走 audio_player 的 play_audio_threadsafe） =========
+AUDIO_DIR = os.getenv("AIGLASS_GUIDANCE_AUDIO_DIR", "")
 AUDIO_FILES = {
     "向上": os.path.join(AUDIO_DIR, "up.wav"),
     "向下": os.path.join(AUDIO_DIR, "down.wav"),
@@ -155,8 +164,13 @@ AUDIO_FILES = {
 }
 GUIDANCE_INTERVAL_SEC = 1.5  # 引导播报间隔
 
-# 初始化pygame音频
-pygame.mixer.init()
+# 初始化 pygame（可选；避免在无音频设备/服务端环境下导入即崩）
+if pygame is not None and os.getenv("AIGLASS_ENABLE_LOCAL_AUDIO", "0") == "1":
+    try:
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+    except Exception:
+        pygame = None
 
 # ========= 窗口 =========
 WINDOW = "YOLO Seg + Flow Polygon (Peri-Relock) (Grab Guidance)"

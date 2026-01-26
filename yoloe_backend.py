@@ -2,8 +2,15 @@
 # -*- coding: utf-8 -*-
 from typing import List, Dict, Any, Optional, Tuple, Union
 import os
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("YOLO_CONFIG_DIR", os.path.join(_BASE_DIR, ".ultralytics"))
+try:
+    os.makedirs(os.environ["YOLO_CONFIG_DIR"], exist_ok=True)
+except Exception:
+    pass
 import cv2
 import numpy as np
+import torch
 
 # 兼容 YOLOE / YOLO
 # from ultralytics import YOLO as _MODEL
@@ -12,14 +19,22 @@ try:
 except Exception:
     from ultralytics import YOLO as _MODEL
 
-DEFAULT_MODEL_PATH = os.getenv("YOLOE_MODEL_PATH", r"/home/lsc/code/OpenAIglasses_for_Navigation-main/model/yoloe-11l-seg")
+DEFAULT_MODEL_PATH = os.getenv("YOLOE_MODEL_PATH", os.path.join(_BASE_DIR, "model", "yoloe-11l-seg.pt"))
 TRACKER_CFG        = os.getenv("YOLO_TRACKER_YAML", "bytetrack.yaml")
 
 class YoloEBackend:
     def __init__(self, model_path: Optional[str] = None, device: Optional[Union[str, int]] = None):
+        resolved_device = device or os.getenv("AIGLASS_DEVICE", "cuda:0")
+        if isinstance(resolved_device, str) and resolved_device.startswith("cuda") and not torch.cuda.is_available():
+            resolved_device = "cpu"
+
         self.model = _MODEL(model_path or DEFAULT_MODEL_PATH)
-        self.model.to("cuda")
-        self.device = device
+        try:
+            self.model.to(resolved_device)
+        except Exception:
+            # 兼容部分 ultralytics wrapper：若 .to 不可用则忽略，由推理调用时选择设备
+            pass
+        self.device = resolved_device
 
     def set_text_classes(self, names: List[str]):
         # YOLOE 文本提示：与你模板一致

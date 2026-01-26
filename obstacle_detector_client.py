@@ -1,6 +1,12 @@
 # app/cloud/obstacle_detector_client.py (新文件)
 import logging
 import os
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("YOLO_CONFIG_DIR", os.path.join(_BASE_DIR, ".ultralytics"))
+try:
+    os.makedirs(os.environ["YOLO_CONFIG_DIR"], exist_ok=True)
+except Exception:
+    pass
 import cv2
 import numpy as np
 import torch
@@ -51,6 +57,7 @@ class ObstacleDetectorClient:
         self.model = None
         self.whitelist_embeddings = None
         self.WHITELIST_CLASSES = [
+            'person',
             'bicycle', 'car', 'motorcycle', 'bus', 'truck', 'animal', 'scooter', 'stroller', 'dog',
             'pole', 'post', 'column', 'pillar', 'stanchion', 'bollard', 'utility pole',
             'telegraph pole', 'light pole', 'street pole', 'signpost', 'support post',
@@ -150,6 +157,19 @@ class ObstacleDetectorClient:
                     continue
 
             cls_id = int(results[0].boxes.cls[i])
+            conf = None
+            try:
+                if getattr(results[0].boxes, "conf", None) is not None:
+                    conf = float(results[0].boxes.conf[i])
+            except Exception:
+                conf = None
+            bbox = None
+            try:
+                if getattr(results[0].boxes, "xyxy", None) is not None:
+                    x1, y1, x2, y2 = results[0].boxes.xyxy[i].tolist()
+                    bbox = [float(x1), float(y1), float(x2), float(y2)]
+            except Exception:
+                bbox = None
             class_names_map = results[0].names
             class_name = "Unknown"
             if isinstance(class_names_map, dict):
@@ -165,6 +185,8 @@ class ObstacleDetectorClient:
 
             final_obstacles.append({
                 'name': class_name.strip(),
+                'conf': conf,
+                'bbox': bbox,
                 'mask': mask,
                 'area': area,
                 'area_ratio': area / (H * W),

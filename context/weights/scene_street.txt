@@ -1,0 +1,18 @@
+# 街道场景权重（SceneWeight: street）
+
+car 1.2
+bus 1.2
+truck 1.2
+bicycle 1.1
+motorcycle 1.1
+scooter 1.1
+person 1.0
+
+pole 0.9
+post 0.9
+column 0.9
+pillar 0.9
+bollard 0.9
+signpost 0.9
+light pole 0.9
+utility pole 0.9
