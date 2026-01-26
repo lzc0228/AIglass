@@ -482,6 +482,8 @@
 4. **提交内容**：
    - `79f7985`：`dev: sync features and docs`（本轮实现与文档同步的主提交）
    - `d452a4a`：`chore: stop tracking runtime artifacts`（将历史误纳入 git 的 `recordings/` 与 `__pycache__/` 从版本控制中移除；本地文件保留）
+   - `d1e0f91`：`docs: log git prep and ignore latex`（把本轮 Git 准备过程记录到 `context/log.md`，并忽略 `latex/`）
+   - `0cfb1ee`：`chore: ignore paper notes`（忽略 `论文写作/`，保持上传前工作区整洁）
 5. **最终状态**：`dev` 分支工作区干净（`git status` 无未提交变更）。
 
 ### 15.3 决策
@@ -506,4 +508,4 @@
 2. 若提示 401/需要密码：
    - HTTPS：Username 填 GitHub 用户名；Password 填 PAT（classic token，至少 `repo` 权限）
    - 或改 SSH：`git remote set-url origin git@github.com:lzc0228/AIglass.git` 后再 `git push -u origin dev`
-3. 推送后建议：在 GitHub 开 PR（`dev` → `main`），并在 PR 描述中引用关键提交号 `79f7985` / `d452a4a` 作为变更依据。
+3. 推送后建议：在 GitHub 开 PR（`dev` → `main`），并在 PR 描述中引用 `dev` 分支关键提交号（如 `79f7985`/`d452a4a`/`d1e0f91`/`0cfb1ee`）作为变更依据。
