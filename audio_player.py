@@ -1,5 +1,5 @@
 # audio_player.py
-# 处理预录音频文件的播放，通过ESP32扬声器输出
+# 处理预录音频文件的播放，���持 ESP32 扬声器、蓝牙、本地音频输出
 
 import os
 import wave
@@ -10,6 +10,49 @@ import queue
 import time
 from audio_stream import broadcast_pcm16_realtime
 from audio_compressor import compressed_audio_cache, AudioCompressor
+
+# 蓝牙音频支持
+_bluetooth_manager = None
+_piper_tts = None
+_tts_enabled = False
+_output_mode = "local"  # local/bluetooth/esp32
+
+def _init_audio_output():
+    """初始化音频输出系统（蓝牙、TTS）"""
+    global _bluetooth_manager, _piper_tts, _tts_enabled, _output_mode
+
+    # 读取输出模式配置
+    _output_mode = os.getenv("AIGLASS_AUDIO_OUTPUT", "local")
+
+    # 初始化蓝牙
+    if _output_mode == "bluetooth":
+        try:
+            from bluetooth_audio import get_bluetooth_manager
+            _bluetooth_manager = get_bluetooth_manager()
+            if _bluetooth_manager.enabled:
+                print(f"[AUDIO] 蓝牙音频已启用，模式: {_output_mode}")
+                # 尝试自动连接
+                if _bluetooth_manager.auto_connect:
+                    _bluetooth_manager.auto_connect_device()
+        except ImportError:
+            print("[AUDIO] 警告: bluetooth_audio 模块未找到，蓝牙功能不可用")
+        except Exception as e:
+            print(f"[AUDIO] 蓝牙初始化失败: {e}")
+
+    # 初始化 TTS
+    _tts_enabled = os.getenv("AIGLASS_TTS_ENABLED", "0") == "1"
+    if _tts_enabled:
+        try:
+            from piper_tts import get_piper_tts
+            _piper_tts = get_piper_tts()
+            if _piper_tts.is_available():
+                print("[AUDIO] Piper-TTS 已启用")
+            else:
+                print("[AUDIO] Piper-TTS 不可用，将仅使用预录音频")
+        except ImportError:
+            print("[AUDIO] 警告: piper_tts 模块未找到，TTS 功能不可用")
+        except Exception as e:
+            print(f"[AUDIO] TTS 初始化失败: {e}")
 
 # 导入录制器（避免循环导入，在需要时动态导入）
 _recorder_imported = False
@@ -30,12 +73,25 @@ def _get_recorder():
 
 # 兼容旧工程中的示例音频（保留）
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-AUDIO_BASE_DIR = os.getenv("AIGLASS_AUDIO_DIR", os.path.join(_BASE_DIR, "music"))
+
+def _resolve_path(path: str) -> str:
+    """Resolve env-provided paths: expand vars, and treat relative paths as repo-relative."""
+    p = os.path.expandvars(os.path.expanduser(path or ""))
+    if not p:
+        return p
+    if os.path.isabs(p):
+        return p
+    return os.path.join(_BASE_DIR, p)
+
+# AIGLASS_AUDIO_DIR/VOICE_DIR may be relative; anchor them to repo root for stability
+AUDIO_BASE_DIR = _resolve_path(os.getenv("AIGLASS_AUDIO_DIR", os.path.join(_BASE_DIR, "music")))
 
 # 新增：voice 目录与映射表
 # 使用脚本所在目录的 voice 文件夹，避免工作目录问题
-VOICE_DIR = os.getenv("VOICE_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "voice"))
-VOICE_MAP_FILE = os.path.join(VOICE_DIR, "map.zh-CN.json")
+VOICE_DIR = _resolve_path(os.getenv("VOICE_DIR", os.path.join(_BASE_DIR, "voice")))
+VOICE_MAP_FILE = _resolve_path(
+    os.getenv("AIGLASS_VOICE_MAP_FILE") or os.getenv("VOICE_MAP_FILE") or os.path.join(VOICE_DIR, "map.zh-CN.json")
+)
 
 # 音频文件映射（将合并 voice 映射）
 AUDIO_MAP = {
@@ -48,6 +104,7 @@ AUDIO_MAP = {
     "向前": os.path.join(AUDIO_BASE_DIR, "converted_向前.wav"),
     "后退": os.path.join(AUDIO_BASE_DIR, "converted_向后.wav"),
     "拿到物体": os.path.join(AUDIO_BASE_DIR, "converted_拿到啦.wav"),
+    "学长好帅啊": os.path.join(AUDIO_BASE_DIR, "converted_学长好帅啊.wav"),
 }
 
 # 音频缓存，避免重复读取
@@ -113,24 +170,38 @@ def load_wav_file(filepath):
 def _merge_voice_map():
     """读取 voice/map.zh-CN.json 并合并到 AUDIO_MAP"""
     try:
-        if not os.path.exists(VOICE_MAP_FILE):
-            print(f"[AUDIO] 未找到映射文件: {VOICE_MAP_FILE}")
+        # 兼容：map 文件可放在 VOICE_DIR、AIGLASS_AUDIO_DIR 或由环境变量直接指定
+        map_candidates = [
+            VOICE_MAP_FILE,
+            os.path.join(VOICE_DIR, "map.zh-CN.json"),
+            os.path.join(AUDIO_BASE_DIR, "map.zh-CN.json"),
+            os.path.join(_BASE_DIR, "voice", "map.zh-CN.json"),
+        ]
+        map_path = next((p for p in map_candidates if p and os.path.exists(p)), None)
+        if not map_path:
+            print(f"[AUDIO] 未找到 voice 映射文件（可选）: {VOICE_MAP_FILE}")
+            print(f"[AUDIO] 提示：可在 .env 设置 VOICE_DIR 或 AIGLASS_VOICE_MAP_FILE 来指定映射文件路径")
             return
-        with open(VOICE_MAP_FILE, "r", encoding="utf-8") as f:
+
+        with open(map_path, "r", encoding="utf-8") as f:
             m = json.load(f)
+        map_dir = os.path.dirname(map_path)
         added = 0
         for text, info in (m or {}).items():
             files = (info or {}).get("files") or []
             if not files:
                 continue
-            fname = files[0]
-            fpath = os.path.join(VOICE_DIR, fname)
-            if os.path.exists(fpath):
-                AUDIO_MAP[text] = fpath
-                added += 1
-            else:
-                print(f"[AUDIO] 映射文件缺失: {fpath}")
-        print(f"[AUDIO] 已合并 voice 映射 {added} 条")
+            # files 支持：相对 map 文件目录的相对路径、或绝对路径
+            for fname in files:
+                raw = os.path.expandvars(os.path.expanduser(str(fname or ""))).strip()
+                if not raw:
+                    continue
+                fpath = raw if os.path.isabs(raw) else os.path.join(map_dir, raw)
+                if os.path.exists(fpath):
+                    AUDIO_MAP[text] = fpath
+                    added += 1
+                    break
+        print(f"[AUDIO] 已合并 voice 映射 {added} 条（map={map_path}）")
     except Exception as e:
         print(f"[AUDIO] 读取 voice 映射失败: {e}")
 
@@ -235,19 +306,22 @@ async def _broadcast_audio_optimized(pcm_data: bytes):
 def initialize_audio_system():
     """初始化音频系统"""
     global _initialized, _worker_thread, _last_play_ts
-    
+
     if _initialized:
         return
-    
+
+    # 初始化音频输出（蓝牙、TTS）
+    _init_audio_output()
+
     # 先合并 voice 映射，再预加载
     _merge_voice_map()
     preload_all_audio()
-    
+
     _worker_thread = threading.Thread(target=_audio_worker, daemon=True)
     _worker_thread.start()
     _initialized = True
     _last_play_ts = 0.0
-    
+
     # 显示压缩统计
     if os.getenv("AIGLASS_COMPRESS_AUDIO", "1") == "1":
         stats = compressed_audio_cache.get_compression_stats()
@@ -257,8 +331,8 @@ def initialize_audio_system():
         print(f"  - 压缩后: {stats['total_compressed_size'] / 1024:.1f} KB")
         print(f"  - 压缩率: {stats['compression_ratio']:.1%}")
         print(f"  - 节省: {stats['bytes_saved'] / 1024:.1f} KB")
-    
-    print("[AUDIO] 音频系统初始化完成（预加载+工作线程）")
+
+    print(f"[AUDIO] 音频系统初始化完成（预加载+工作线程，输出模式: {_output_mode}）")
 
 def play_audio_threadsafe(audio_key):
     """线程安全的音频播放函数"""
@@ -385,6 +459,33 @@ def play_voice_text(text: str):
         _last_voice_text = text
         _last_voice_time = current_time
         return
+
+    # ========== TTS 回退（新增）==========
+    # 如果没有预录音频，尝试使用 Piper-TTS
+    global _piper_tts, _tts_enabled, _worker_loop
+    if _tts_enabled and _piper_tts and _piper_tts.is_available():
+        try:
+            wav_path = _piper_tts.text_to_file(text)
+            if wav_path and os.path.exists(wav_path):
+                print(f"[AUDIO] 使用 TTS 生成语音: {text}")
+                # 加载并播放生成的音频
+                pcm_data = load_wav_file(wav_path)
+                if pcm_data and _worker_loop:
+                    # 直接播放（不经过队列，保持低延迟）
+                    asyncio.run_coroutine_threadsafe(
+                        _broadcast_audio_optimized(pcm_data),
+                        _worker_loop
+                    )
+                    # 清理临时文件
+                    try:
+                        os.remove(wav_path)
+                    except Exception:
+                        pass
+                    _last_voice_text = text
+                    _last_voice_time = current_time
+                    return
+        except Exception as e:
+            print(f"[AUDIO] TTS 生成失败: {e}")
 
     # 未匹配则输出日志（便于调试）
     print(f"[AUDIO] 未找到匹配语音: {text}")

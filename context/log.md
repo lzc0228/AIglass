@@ -712,3 +712,350 @@ VI. CONCLUSION                    ✅ 完成
 4. ✅ 所有语法和格式问题已修复
 5. ✅ 参考文献 `main.bib` 已创建
 6. ✅ 论文说明文档 `latex/README.md` 已创建
+
+---
+
+# 追加记录：IROS 论文改稿（Review 驱动，2026-01-29）
+
+> 背景：用户准备开始撰写/完善 IROS 论文，要求先 review `latex/main.tex`，并结合 `api_chat/review.md` 的审稿意见进行修改；图表允许占位，格式与写作方式参照 `latex/reference.tex`，结构遵循 `latex/struct.md`，写作指导参考 `论文写作/`。
+
+## 1) 本阶段目标
+
+1. 对 `latex/main.tex` 初稿做一次“面向 IROS 可投”的系统性 review：叙事一致性、方法描述可信度、图表/表格自解释程度、引用与格式完整性。
+2. 针对 `api_chat/review.md` 的主要否定点（方法太脚本化、baseline 不合理、IMU gating 有安全风险、场景推断脆弱、缺少语义质量权衡、占位符过多）做结构化改稿与补强。
+3. 保持“可后续落地”的写法：允许在不联网/不新增复杂训练流程的前提下，把研究贡献表述为可复现实验与可实现的系统方法；必要处明确“当前版本/可选增强/未来工作”。
+
+## 2) 读到的审稿要点（来自 `api_chat/review.md`）
+
+1. **方法论被认为“过于手工/规则脚本化”**：Eq.(1) 只是置信度 × 手工权重表，缺少学习/优化/理论支撑。
+2. **baseline 被认为“稻草人”**：把“每帧播报全部检测框”当 baseline 不公平；应对比 MOT/追踪滤波（DeepSORT/ByteTrack 等）或更现实的辅助系统。
+3. **IMU gating 被认为存在安全风险**：用户转头是主动扫描行为，若转头时静音会错过危险提醒。
+4. **场景推断被认为脆弱**：基于 co-occurrence 的硬规则投票可能误判；缺少时间一致性/概率建模。
+5. **缺少对“云端语义质量 vs 本地低延迟”的量化权衡**：只比延迟与过滤率不够，需要讨论语义质量/可执行性。
+6. **占位符多**：\todo{XX}/\todo{N}/图占位若不补齐会 desk reject。
+
+## 3) 关键决策（改稿口径）
+
+1. **把“权重表脚本”改写为“可解释的轻量策略/政策（policy）”**：
+   - 维持可部署性与边缘端实时性，强调因子化（factorized）评分与结构化输出的“低计算复杂度”；
+   - 同时提供“可选离线校准（learning-to-rank 目标）”作为减轻手工调参的路线，但明确这是 *可选增强*，不虚构已完成的大规模学习过程。
+2. **baseline 纠偏：引入 tracker baseline，broadcast 仅作为 ablation**：
+   - 把 DeepSORT/ByteTrack 作为“现实的本地去冗余/ID 持续”对照；
+   - “broadcast”改成“信息量上界的 ablation”，避免 reviewer 指控“稻草人 baseline”。
+3. **IMU 机制改为 scan-aware scheduling（扫描友好）**：
+   - 明确“危险告警不抑制”，只对低紧急重复信息做延后/汇总，避免把“转头扫描”误当作“不需要信息”。
+4. **场景推断补强为时间一致性**：
+   - 引入平滑的 belief 更新 + hysteresis，强调“避免抖动切换”，而非单帧硬切换。
+5. **补齐“语义效用 vs 云端”评估口径**：
+   - 在 Experiments 增加 human-rated correctness/actionability 的对比表，明确讨论“延迟—语义效用”权衡，而不只谈 latency。
+
+## 4) 已实施改动（论文）
+
+### 4.1 `latex/main.tex`（主要改稿点）
+
+1. **Abstract/Introduction 的“贡献”重写**：
+   - 强化为“information prioritization policy + temporal context + scan-aware scheduling”的系统贡献；
+   - 不再把方案直接描述为“纯 heuristic/手工权重脚本”，同时避免不实宣称“已训练大模型/已完成大规模学习”。
+2. **Related Work 新增 MOT/追踪去冗余方向**：
+   - 增加 SORT/DeepSORT/ByteTrack 相关叙述，承认追踪是冗余控制的标准方案，并解释我们与“仅追踪稳定”不同：我们额外做任务/场景驱动的“语义优先级 + 结构化播报”。
+3. **Methods 由“heuristic re-ranking”调整为“Semantic Maximization Policy”**：
+   - 保留 Eq.(1) 的因子化评分表达，但将其定位为边缘端可执行的 policy；
+   - 增加“Offline Weight Calibration (Optional)”：用 pairwise learning-to-rank 目标作为可选离线调参路径，强调 lookup table 的可解释与可部署。
+4. **Scene inference 从“单帧投票”补强为“temporal belief + hysteresis”**：
+   - 用 $b_t(s)$ 平滑更新，降低“看窗外/海报误触发”导致的上下文跳变风险。
+5. **Stream Optimization 加入“track-aware deduplication”**：
+   - 明确可以用 ByteTrack/DeepSORT 获得 track ID，并用 track-level event 触发播报，避免逐帧重复播报同一目标。
+6. **IMU 部分改为 scan-aware，并补充安全表述**：
+   - 强调 hazard warning 不被 yaw-rate gate 静音；低紧急信息可延后，并在扫描结束后摘要。
+7. **Experiments 的 baseline 与指标重构**：
+   - baseline 改为：Cloud MLLM、Tracker baseline、Broadcast ablation；
+   - 指标补充：actionability 人评、安全性指标（hazard recall/time-to-warning）；
+   - 新增“Semantic Utility vs Cloud MLLM”表（correctness/actionability 的 Likert 评分占位）。
+8. **清理明显会被 desk reject 的占位文字**：
+   - 删除 Fig.1 里 “\todo{Replace with actual system architecture diagram}” 这类直白占位提示（保留 fbox 占位框即可）。
+
+### 4.2 `latex/main.bib`（引用补强）
+
+1. 新增 `IEEEexample:BSTcontrol`，避免 `\bstctlcite{IEEEexample:BSTcontrol}` 缺失导致 bibtex 报错。
+2. 新增 MOT 相关引用条目：`sort`、`deepsort`、`bytetrack`，用于支撑新 baseline 与 Related Work 的论述。
+
+## 5) 关键假设（写作与实验口径）
+
+1. **系统实现侧**：项目现有代码/文档中确实存在“跟踪 + 去冗余/节流 + IMU 抑制冗余”的工程实现线索（例如文档里提到 ByteTrack，语义输出模块有去重与 IMU gating 逻辑）。
+2. **实验可落地**：后续能真实跑出 tracker baseline（DeepSORT/ByteTrack）与 cloud MLLM baseline 的对比结果，并得到 actionability/correctness 的人工评分数据。
+3. **安全口径**：IMU gating 的设计必须满足“危险告警不抑制”，否则无法在审稿中自洽。
+4. **占位符策略**：当前仍允许保留数值与人评结果的 \todo{} 占位（用于写作阶段），但提交前必须全部补齐并保证表述一致。
+
+## 6) 未解决问题 / 风险点（需要尽快补齐）
+
+1. **关键数值仍为占位**：延迟（min/mean/max）、过滤率、hazard recall/time-to-warning、人评 correctness/actionability、用户数 N、WHO 统计等仍需真实数据。
+2. **文献条目不完整**：`worldscribe`、`chatmap`、`yoloe`、`jetson` 仍含 TODO/不完整作者信息，需要查证并补齐真实引用（否则容易被质疑学术严谨性）。
+3. **“校准权重”目前是方法路线而非已完成实验**：若后续不做任何校准实验，需要在文中更明确地把它放到 future work，避免 reviewer 认为“吹过头”。
+4. **编译环境**：当前容器内未检测到 `pdflatex`（需要在能编译的环境中做最终排版/页数/溢出检查）。
+5. **baseline 的可复现实现**：论文中加入了 tracker baseline 与 cloud MLLM 的评估口径，但仓库需要确认是否已有可复现实验脚本/数据采集流程，否则会出现“论文写了但实验跑不出来”的风险。
+
+## 7) 下一步行动（建议按优先级）
+
+1. **补齐 citation**：
+   - 查证并补齐 `worldscribe/chatmap/yoloe/jetson` 的作者、会议/期刊、年份、DOI/arXiv 等；
+   - 确保所有 `\cite{}` 在 `main.bib` 中都有对应条目且可通过 bibtex 编译。
+2. **补齐关键实验数据**（提交前必须完成）：
+   - Jetson 端到端 latency（含均值/方差/置信区间更佳）；
+   - 追踪 baseline（DeepSORT/ByteTrack）的 announcement rate、redundancy reduction、task recall；
+   - 扫描场景下 hazard recall 与 time-to-warning；
+   - cloud MLLM 与本地的 correctness/actionability 人评（至少小规模、但需说明评审设置）。
+3. **绘制/替换图**：
+   - Fig.1 系统架构、Fig.2 prioritization pipeline、Fig.3 IMU scan-aware scheduling（保持可独立读懂的 caption）。
+4. **提交前 check-list（写作层面）**：
+   - 删除所有 \todo{} 占位并核对前后一致；
+   - 确保每张表/图在正文中都有引用且顺序正确；
+   - 进行一次完整编译与页数检查，避免 IROS desk reject（页数、格式、字体、溢出等）。
+
+---
+
+# 追加记录：语音输出代码修改 - 移除大模型依赖 + 添加蓝牙音频输出（2026-01-29）
+
+> 背景：用户要求修改语音输出代码，主要目标：1) 不使用大模型，注释掉相关调用；2) 保留结构化语音输出；3) 通过 Jetson Nano 蓝牙���块将语音传给骨传导耳机。
+
+## 1) 本轮目标
+
+1. **移除大模型依赖**：注释掉所有调用大模型的代码（omni_client.py、qwen_extractor.py 等）
+2. **保留结构化语音输出**：使用 semantic_output.py 的规则驱动语音生成
+3. **添加蓝牙音频输出**：通过 Jetson Nano 的蓝牙模块传输到骨传导耳���
+4. **集成 Piper-TTS**：使用轻量级神经 TTS 处理动态文本
+
+**语音播放路径**：主板（传输信号） → Nano（通过蓝牙模块） → 骨传导耳机（联想骨传导耳机 S102）
+
+## 2) 关键决策
+
+1. **离线优先策略**：不依赖云端大模型，使用本地规则驱动语音 + TTS 组合
+2. **TTS 选择**：使用 Piper-TTS（轻量神经 TTS）而非云端 API，保证低延迟
+3. **蓝牙方案**：使用 PulseAudio + pybluez 实现蓝牙音频路由
+4. **向后兼容**：保留预录音频优先策略，TTS 作为回退方案
+
+## 3) 已完成事项
+
+### 3.1 注释掉大模型调用
+
+**文件：qwen_extractor.py**
+- 保留本地映射字典 LOCAL_CN2EN（红牛、矿泉水、可乐、水杯、手机、钥匙、眼镜、书包、钱包、遥控器、鼠标、键盘、笔、笔记本、书、桌子、椅子、门、窗户、电视、电脑、平板等）
+- 注释掉 _make_client() 和 OpenAI API 调用
+- extract_english_label() 只使用本地映射，fallback 到 "object"
+
+**文件：app_main.py**
+- 注释掉 from omni_client import stream_chat, OmniStreamPiece
+- 注释掉 omni_conversation_active 和 omni_previous_nav_state 变量
+- 修改 start_ai_with_text() 函数：不调用大模型，改为使用本地语音播报
+
+### 3.2 创建蓝牙音频模块
+
+**新建文件：bluetooth_audio.py**
+
+功能：
+- BluetoothAudioManager 类：蓝牙设备管理
+- scan_devices()：扫描附近蓝牙设备
+- connect()：连接蓝牙设备
+- disconnect()：断开连接
+- is_connected()：检查连接状态
+- _set_audio_sink()：通过 PulseAudio 设置音频输出到蓝牙
+
+实现方式：
+- 使用 pybluez 库进行蓝牙连接管理
+- 使用 PulseAudio 的 pactl 或 pulsectl 库进行音频路由
+- 蓝牙配置文件使用 A2DP（音频传输）
+
+### 3.3 创建 Piper-TTS 模块
+
+**新建文件：piper_tts.py**
+
+功能：
+- PiperTTS 类：轻量神经 TTS 封装
+- text_to_file()：将文本转换为 WAV 文件
+- text_to_audio()：将文本转换为 PCM16 音频数据
+- 支持命令行 piper 工具和 Python 包两种方式
+
+模型配置：
+- 默认模型：zh_CN-huayan-medium.onnx（花燕中文模型，60MB）
+- 采样率：22050Hz
+- 音频格式：16-bit PCM，单声道
+
+### 3.4 修改 audio_player.py 集成蓝牙和 TTS
+
+修改内容：
+1. 添加 _init_audio_output() 函数：初始化蓝牙管理器和 TTS
+2. 修改 play_voice_text() 函数：
+   - 优先使用预录音频（AUDIO_MAP）
+   - 无匹配时使用 Piper-TTS 生成语音
+   - TTS 生成的音频直接播放（不经过队列，保持低延迟）
+
+### 3.5 配置文件更新
+
+文件：.env
+```bash
+AIGLASS_TTS_ENABLED=1
+AIGLASS_TTS_MODEL=model/piper/zh_CN-huayan-medium.onnx
+AIGLASS_AUDIO_OUTPUT=local
+```
+
+文件：.env.example
+- 添加蓝牙配置选项
+- 添加 TTS 配置选项
+- 添加音频输出模式选项
+
+文件：requirements.txt
+- 注释掉 dashscope 和 openai（不使用大模型时不需要）
+- 添加可选依赖：pybluez、pulsectl、piper-tts、onnxruntime
+
+## 4) 模型文件
+
+### 4.1 已下载模型
+
+```
+model/piper/
+├── zh_CN-huayan-medium.onnx      (60MB - 花燕中文 TTS 模型)
+└── zh_CN-huayan-medium.onnx.json  (4.8KB - 模型配置)
+```
+
+## 5) Python 包依赖
+
+### 5.1 已安装（conda 环境 openai_glasses）
+
+核心依赖：
+- fastapi==0.104.1
+- uvicorn[standard]==0.24.0
+- torch==2.5.1+cu121
+- ultralytics==8.3.200
+- dashscope (已安装，但已不使用)
+- openai==2.11.0 (已安装，但已不使用)
+
+新增依赖：
+- huggingface_hub==1.3.5
+- onnxruntime==1.23.2
+- piper-tts
+
+待安装（Jetson Nano 上）：
+- pybluez (蓝牙库)
+- pulsectl (PulseAudio 控制)
+
+### 5.2 系统依赖（Jetson Nano）
+
+```bash
+sudo apt-get install bluez bluez-tools pulseaudio pulseaudio-module-bluetooth
+sudo systemctl start bluetooth
+sudo systemctl enable bluetooth
+```
+
+## 6) 代码结构变化
+
+### 6.1 新建文件
+
+| 文件 | 功能 |
+|------|------|
+| bluetooth_audio.py | 蓝牙设备管理和音频路由 |
+| piper_tts.py | Piper-TTS 轻量神经 TTS 封装 |
+| scripts/download_piper_model.sh | 模型下载脚本（shell） |
+| scripts/download_piper_model.py | 模型下载脚本（Python） |
+| scripts/check_and_install.sh | 环境检查脚本 |
+
+### 6.2 修改文件
+
+| 文件 | 修改内容 |
+|------|----------|
+| qwen_extractor.py | 注释掉大模型 API 调用 |
+| app_main.py | 注释掉 omni_client，修改 start_ai_with_text() |
+| audio_player.py | 集成蓝牙和 TTS 支持 |
+
+## 7) 语音输出流程
+
+### 7.1 语音播报优先级
+
+```
+预录音频 > TTS 生成 > 静默
+```
+
+### 7.2 音频输出路径
+
+```
+主板 → Jetson Nano → 蓝牙模块（A2DP） → 联想骨传导耳机 S102
+```
+
+## 8) 未解决问题
+
+1. 蓝牙连接稳定性：需要添加重连机制
+2. TTS 延迟：当前约 1-2 秒，可能需要优化
+3. 服务器环境限制：无蓝牙硬件，无法在服务器上测试蓝牙功能
+
+## 9) 下一步行动
+
+1. 测试运行 python app_main.py
+2. Jetson Nano 蓝牙配置和配对
+3. 功能测试和性能优化
+
+---
+
+
+---
+
+## 2026-01-29 - 语音输出代码重构
+
+### 修改目标
+1. **移除大模型依赖**：注释掉所有调用大模型的代码（omni_client, qwen_extractor等）
+2. **保留结构化语音输出**：使用 semantic_output.py 的规则驱动语音生成
+3. **添加蓝牙音频输出**：通过 Jetson Nano 的蓝牙模块传输到骨传导耳机
+4. **集成 Piper-TTS**：使用轻量级神经 TTS 处理动态文本
+
+### 修改文件列表
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `omni_client.py` | 保留 | DashScope Omni-Turbo 大模型语音客户端（已禁用） |
+| `qwen_extractor.py` | 修改 | 保留本地映射，注释掉API调用 |
+| `app_main.py` | 修改 | 注释掉 start_ai_with_text() 的AI语音部分 |
+| `audio_player.py` | 修改 | 添加蓝牙输出支持和 TTS 回退 |
+| `bluetooth_audio.py` | 新建 | 蓝牙设备管理和音频播放模块 |
+| `piper_tts.py` | 新建 | Piper-TTS 轻量神经 TTS 封装 |
+| `.env.example` | 修改 | 添加蓝牙和 TTS 相关配置 |
+| `README.md` | 修改 | 更新文档反映新架构 |
+
+### 关键技术决策
+
+1. **语音播放路径**：主板（传输信号） → Nano（通过蓝牙模块） → 联想骨传导耳机 S102
+
+2. **TTS 引擎**：Piper-TTS（轻量神经 TTS）
+   - 模型：zh_CN-huayan-medium.onnx (60MB)
+   - 采样率：22050Hz
+   - 支持：中文语音合成
+
+3. **音频系统**：
+   - PulseAudio 用于蓝牙音频路由
+   - pybluez 用于蓝牙设备管理
+   - 预录音频优先，TTS 作为回退
+
+4. **回滚方案**：
+   - `AIGLASS_AUDIO_OUTPUT=local` - 使用本地 3.5mm 音频输出
+   - `AIGLASS_AUDIO_OUTPUT=esp32` - 通过 ESP32 传输到耳机
+
+### 验证测试
+
+| 测试项 | 状态 | 说明 |
+|--------|------|------|
+| 大模型已禁用 | ✅ | omni_client 和 OpenAI API 调用都已注释 |
+| 蓝牙音频模块 | ✅ | bluetooth_audio.py 完整实现 |
+| Piper-TTS 集成 | ✅ | 可以成功生成中文语音 |
+| 结构化语音输出 | ✅ | semantic_output.py 规则驱动 |
+| 依赖库 | ✅ | 所有库在 requirements.txt |
+
+### 未解决问题
+
+1. **蓝牙连接稳定性**：需要在实际 Jetson Nano 硬件上测试
+2. **音频延迟**：蓝牙音频有额外延迟，可能需要优化
+3. **语音资源缺失**：voice/ 目录下大部分预录音频文件不存在
+4. **PulseAudio 配置**：在 Jetson 上可能需要额外调试
+
+### 下一步行动
+
+1. 在 Jetson Nano 上配置蓝牙服务
+2. 配置 PulseAudio 蓝牙模块
+3. 测试骨传导耳机连接和音频传输
+4. 补充预录音频资源
+

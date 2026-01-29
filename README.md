@@ -59,9 +59,10 @@
 
 ### 🎙️ 实时语音交互
 - **语音识别（ASR）**：基于阿里云 DashScope Paraformer 实时语音识别
-- **多模态对话**：Qwen-Omni-Turbo 支持图像+文本输入，语音输出
+- **轻量级 TTS**：集成 Piper-TTS 神经语音合成，支持动态文本转语音
 - **智能指令解析**：自动识别导航、查找、对话等不同类型指令
 - **上下文感知**：在不同模式下智能过滤无关指令
+- **蓝牙音频输出**：支持通过蓝牙传输到骨传导耳机
 
 ### 📹 视频与音频处理
 - **实时视频流**：WebSocket 推流，支持多客户端同时观看
@@ -95,10 +96,11 @@
 - **CUDA**: 11.8 或更高版本（GPU 加速必需）
 - **浏览器**: Chrome 90+, Firefox 88+, Edge 90+（用于 Web 监控）
 
-### API 密钥
-- **阿里云 DashScope API Key**（必需）：
-  - 用于语音识别（ASR）和 Qwen-Omni 对话
+### API 密钥（可选）
+- **阿里云 DashScope API Key**（可选，用于语音识别）：
+  - 用于语音识别（ASR）
   - 申请地址：https://dashscope.console.aliyun.com/
+  - 如不配置，系统仍可使用预录音频和 TTS 功能
 
 ## 🚀 快速开始
 
@@ -139,6 +141,16 @@ pip install -r requirements.txt
 | `shoppingbest5.pt` | 物品识别 | ~30MB | [待补充] |
 | `trafficlight.pt` | 红绿灯检测 | ~20MB | [待补充] |
 | `hand_landmarker.task` | 手部检测 | ~15MB | [MediaPipe Models](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker#models) |
+| `zh_CN-huayan-medium.onnx` | Piper-TTS 中文语音 | ~60MB | [HuggingFace](https://hf-mirror.com/Lin-HuaZhi/piper-voice-zh-huayan-medium) |
+
+**下载 TTS 模型**:
+```bash
+# 方法 1: 使用下载脚本
+bash scripts/download_piper_model.sh
+
+# 方法 2: 使用 Python
+python scripts/download_piper_model.py
+```
 
 ### 4. 配置 API 密钥
 
@@ -187,8 +199,9 @@ python app_main.py
 │    └────┬────────────────┬────────────────┬─────────────┘    │
 │         │                │                │                  │
 │  ┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐         │
-│  │ ASR 模块     │  │ Omni 对话   │  │ 音频播放     │         │
-│  │ (asr_core)   │  │(omni_client)│  │(audio_player)│         │
+│  │ ASR 模块     │  │ 语音合成    │  │ 音频播放     │         │
+│  │ (asr_core)   │  │ (piper_tts) │  │(audio_player)│         │
+│  │              │  │             │  │(bluetooth)   │         │
 │  └──────────────┘  └──────────────┘  └──────────────┘         │
 │                                                               │
 │         应用层                                                │
@@ -222,12 +235,17 @@ python app_main.py
 └───────────────────────────────────────────────────────────────┘
           │
 ┌─────────▼─────────────────────────────────────────────────────┐
-│                    外部服务层                                  │
+┌─────────▼─────────────────────────────────────────────────────┐
+│                    外部服务层（可选）                          │
 │  ┌──────────────────────────────────────────────┐            │
-│  │  阿里云 DashScope API                         │            │
+│  │  阿里云 DashScope API (可选)                 │            │
 │  │  - Paraformer ASR (实时语音识别)              │            │
-│  │  - Qwen-Omni-Turbo (多模态对话)               │            │
-│  │  - Qwen-Turbo (标签提取)                      │            │
+│  └──────────────────────────────────────────────┘            │
+│                                                               │
+│  ┌──────────────────────────────────────────────┐            │
+│  │  本地 TTS 引擎                               │            │
+│  │  - Piper-TTS (神经语音合成)                  │            │
+│  │  - 预录音频播放                              │            │
 │  └──────────────────────────────────────────────┘            │
 └───────────────────────────────────────────────────────────────┘
 ```
@@ -242,8 +260,9 @@ python app_main.py
 | **过马路导航** | `workflow_crossstreet.py` | 斑马线检测、红绿灯识别、对齐引导 |
 | **物品查找** | `yolomedia.py` | 物品检测、手部引导、抓取确认 |
 | **语音识别** | `asr_core.py` | 实时 ASR、VAD、指令解析 |
-| **语音合成** | `omni_client.py` | Qwen-Omni 流式语音生成 |
-| **音频播放** | `audio_player.py` | 多路混音、TTS 播放、音量控制 |
+| **语音合成** | `piper_tts.py` | Piper-TTS 神经语音合成 |
+| **音频播放** | `audio_player.py` | 多路混音、TTS 播放、蓝牙音频输出 |
+| **蓝牙管理** | `bluetooth_audio.py` | 蓝牙设备连接、音频路由 |
 | **视频录制** | `sync_recorder.py` | 音视频同步录制 |
 | **桥接 IO** | `bridge_io.py` | 线程安全的帧缓冲与分发 |
 
@@ -372,7 +391,7 @@ python app_main.py
 创建 `.env` 文件配置以下参数：
 
 ```bash
-# 阿里云 API
+# 阿里云 API（可选，用于语音识别）
 DASHSCOPE_API_KEY=sk-xxxxx
 
 # 模型路径（可选，使用默认路径可不配置）
@@ -385,6 +404,20 @@ AIGLASS_MASK_MIN_AREA=1500      # 最小掩码面积
 AIGLASS_MASK_MORPH=3            # 形态学核大小
 AIGLASS_MASK_MISS_TTL=6         # 掩码丢失容忍帧数
 AIGLASS_PANEL_SCALE=0.65        # 数据面板缩放
+
+# 音频输出配置
+AIGLASS_AUDIO_OUTPUT=local       # 输出模式: local/bluetooth/esp32
+AIGLASS_ENABLE_LOCAL_AUDIO=0     # 启用本地 pygame 音频播放
+
+# 蓝牙音频配置（可选）
+AIGLASS_BLUETOOTH_ENABLED=0         # 启用蓝牙音频
+AIGLASS_BLUETOOTH_DEVICE_ADDR=      # 蓝牙设备MAC地址
+AIGLASS_BLUETOOTH_DEVICE_NAME=      # 蓝牙设备名称
+AIGLASS_BLUETOOTH_AUTO_CONNECT=0    # 启动时自动连接
+
+# TTS 文字转语音配置（可选）
+AIGLASS_TTS_ENABLED=0             # 启用 TTS（用于无预录音频的文本）
+AIGLASS_TTS_MODEL=model/piper/zh_CN-huayan-medium.onnx
 
 # 音频配置
 TTS_INTERVAL_SEC=1.0            # 语音播报间隔
@@ -446,22 +479,39 @@ FEATURE_PARAMS = dict(
 | `yolo-seg.pt` | ⚠️ 需获取 | 盲道/斑马线分割模型，需训练或获取预训练权重 |
 | `yoloe-11l-seg.pt` | ⚠️ 需获取 | YOLOE 开放词汇检测模型 |
 | `shoppingbest5.pt` | ⚠️ 需获取 | 物品识别模型，需自定义训练 |
-| `trafficlight.pt` | ⚠️ 需获取 | 红绿灯检测模型，需训练 |
+| `trafficlight.pt` | ��️ 需获取 | 红绿灯检测模型，需训练 |
 | `hand_landmarker.task` | ✅ 可下载 | MediaPipe 手部检测模型，从 Google 官网下载 |
+| `zh_CN-huayan-medium.onnx` | ✅ 可下载 | Piper-TTS 中文语音模型，使用脚本下载 |
 
 **建议**: 联系项目维护者获取模型权重，或根据 `tasks/` 目录中的训练脚本自行训练。
 
-### 2. API 密钥配置
+### 2. API 密钥配置（可选）
 
 | API | 用途 | 获取方式 |
 |-----|------|---------|
-| `DASHSCOPE_API_KEY` | 语音识别、多模态对话 | [阿里云 DashScope 控制台](https://dashscope.console.aliyun.com/) |
+| `DASHSCOPE_API_KEY` | 语音识别（ASR） | [阿里云 DashScope 控制台](https://dashscope.console.aliyun.com/) |
+
+**注意**: 系统已支持无 API 运行，使用预录音频和 Piper-TTS 进行语音播报。
 
 **配置方法**:
 ```bash
 cp .env.example .env
-# 编辑 .env 文件，填入真实的 API Key
+# 编辑 .env 文件，如需使用 ASR 则填入真实的 API Key
 ```
+
+### 2.1 TTS 模型下载
+
+系统使用 Piper-TTS 进行本地语音合成：
+
+```bash
+# 使用下载脚本
+bash scripts/download_piper_model.sh
+
+# 或使用 Python 下载
+python scripts/download_piper_model.py
+```
+
+模型将下载到 `model/piper/zh_CN-huayan-medium.onnx`
 
 ### 3. 功能完善
 

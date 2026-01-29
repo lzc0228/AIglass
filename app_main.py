@@ -56,7 +56,8 @@ from dashscope import audio as dash_audio  # 若未安装，会在原项目里�
 
 API_KEY = os.getenv("DASHSCOPE_API_KEY")
 if not API_KEY:
-    raise RuntimeError("未设置 DASHSCOPE_API_KEY（请在环境变量或 .env 中配置）")
+    print("[WARNING] 未设置 DASHSCOPE_API_KEY，ASR 功能将不可用")
+    API_KEY = "placeholder"  # 设置占位符避免后续代码报错
 
 MODEL        = "paraformer-realtime-v2"
 SAMPLE_RATE  = 16000
@@ -74,7 +75,12 @@ from audio_stream import (
     is_playing_now,
     current_ai_task,
 )
-from omni_client import stream_chat, OmniStreamPiece
+# ========== 大模型 AI 对话相关（已禁用）==========
+# 当前版本：不使用大模型，注释掉 omni_client 相关代码
+# 如需启用，需要��消下方注释并安装 dashscope/openai 包
+#
+# from omni_client import stream_chat, OmniStreamPiece
+# ================================================
 from asr_core import (
     ASRCallback,
     set_current_recognition,
@@ -127,7 +133,11 @@ UDP_PORT = 12345
 app = FastAPI()
 
 # ====== 状态与容器 ======
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# 静态文件服务（如果 static 目录存在）
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+else:
+    print("[WARNING] static/ 目录不存在，Web UI 功能将不可用")
 
 ui_clients: Dict[int, WebSocket] = {}
 current_partial: str = ""
@@ -151,9 +161,9 @@ cross_street_navigator = None
 cross_street_active = False
 orchestrator = None  # 新增
 
-# 【新增】omni对话状态标志
-omni_conversation_active = False  # 标记omni对话是否正在进行
-omni_previous_nav_state = None  # 保存omni激活前的导航状态，用于恢复
+# 【新增】omni对话状态标志（已禁用，不使用大模型）
+# omni_conversation_active = False  # 标记omni对话是否正在进行
+# omni_previous_nav_state = None  # 保存omni激活前的导航状态，用于恢复
 
 # 【新增】ESP32命令WebSocket连接（用于发送LED控制等指令）
 esp32_cmd_ws: Optional[WebSocket] = None
@@ -1168,21 +1178,23 @@ async def start_ai_with_text_custom(user_text: str):
             await ui_broadcast_final(f"[音乐] 第{song_num}首不存在，请先搜索歌曲。")
         return
 
-    # 【修改】omni对话开始时，切换到CHAT模式
-    global omni_conversation_active, omni_previous_nav_state
-    omni_conversation_active = True
-    
-    # 保存当前导航状态并切换到CHAT模式
-    if orchestrator:
-        current_state = orchestrator.get_state()
-        # 只有在导航模式下才需要保存和切换
-        if current_state not in ["CHAT", "IDLE"]:
-            omni_previous_nav_state = current_state
-            orchestrator.force_state("CHAT")
-            print(f"[OMNI] 对话开始，从{current_state}切换到CHAT模式")
-        else:
-            omni_previous_nav_state = None
-            print(f"[OMNI] 对话开始（当前已在{current_state}模式）")
+    # ========== omni对话状态管理（已禁用）==========
+    # # 【修改】omni对话开始时，切换到CHAT模式
+    # global omni_conversation_active, omni_previous_nav_state
+    # omni_conversation_active = True
+    #
+    # # 保存当前导航状态并切换到CHAT模式
+    # if orchestrator:
+    #     current_state = orchestrator.get_state()
+    #     # 只有在导航模式下才需要保存和切换
+    #     if current_state not in ["CHAT", "IDLE"]:
+    #         omni_previous_nav_state = current_state
+    #         orchestrator.force_state("CHAT")
+    #         print(f"[OMNI] 对话开始，从{current_state}切换到CHAT模式")
+    #     else:
+    #         omni_previous_nav_state = None
+    #         print(f"[OMNI] 对话开始（当前已在{current_state}模式）")
+    # ============================================
     
     # 如果不是特殊命令，执行原有的AI对话逻辑
     # 但如果yolomedia正在运行，暂时不处理普通对话
@@ -1193,94 +1205,109 @@ async def start_ai_with_text_custom(user_text: str):
     # 原有的AI对话逻辑
     await start_ai_with_text(user_text)
 
-# ========= Omni 播放启动 =========
+# ========= AI 播放启动（已禁用大模型，改为本地语音）==========
 async def start_ai_with_text(user_text: str):
-    """硬重置后，开启新的 AI 语音输出。"""
-    async def _runner():
-        txt_buf: List[str] = []
-        rate_state = None
+    """
+    当前版本：不使用大模型，改为本地语音播报
+    如需启用大模型，请取消注释原始实现
+    """
+    # 简单播报用户说的话（通过本地 TTS 或预录音频）
+    await ui_broadcast_final(f"[系统] {user_text}")
 
-        # 组装（图像+文本）
-        content_list = []
-        if last_frames:
-            try:
-                _, jpeg_bytes = last_frames[-1]
-                img_b64 = base64.b64encode(jpeg_bytes).decode("ascii")
-                content_list.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}
-                })
-            except Exception:
-                pass
-        content_list.append({"type": "text", "text": user_text})
+    # 尝试使用本地语音播报
+    try:
+        from audio_player import play_voice_text
+        play_voice_text(user_text)
+    except Exception as e:
+        print(f"[AI] 本地语音播报失败: {e}")
 
-        try:
-            async for piece in stream_chat(content_list, voice="Cherry", audio_format="wav"):
-                # 文本增量（仅 UI）
-                if piece.text_delta:
-                    txt_buf.append(piece.text_delta)
-                    try:
-                        await ui_broadcast_partial("[AI] " + "".join(txt_buf))
-                    except Exception:
-                        pass
-
-                # 音频分片：Omni 返回 24k (PCM16) 的 wav audio.data（Base64）；下行需要 8k PCM16
-                if piece.audio_b64:
-                    try:
-                        pcm24 = base64.b64decode(piece.audio_b64)
-                    except Exception:
-                        pcm24 = b""
-                    if pcm24:
-                        # 24k → 8k (使用ratecv保证音调和速度不变)
-                        pcm8k, rate_state = audioop.ratecv(pcm24, 2, 1, 24000, 8000, rate_state)
-                        pcm8k = audioop.mul(pcm8k, 2, 0.60)
-                        if pcm8k:
-                            await broadcast_pcm16_realtime(pcm8k)
-
-        except asyncio.CancelledError:
-            # 被新一轮打断
-            raise
-        except Exception as e:
-            try:
-                await ui_broadcast_final(f"[AI] 发生错误：{e}")
-            except Exception:
-                pass
-        finally:
-            # 【修改】标记omni对话结束，恢复之前的导航模式
-            global omni_conversation_active, omni_previous_nav_state
-            omni_conversation_active = False
-            
-            # 恢复之前的导航状态
-            if orchestrator and omni_previous_nav_state:
-                orchestrator.force_state(omni_previous_nav_state)
-                print(f"[OMNI] 对话结束，恢复到{omni_previous_nav_state}模式")
-                omni_previous_nav_state = None
-            else:
-                print(f"[OMNI] 对话结束（无需恢复导航状态）")
-            
-            # 自然结束时，给当前连接一个 "完结" 信号
-            from audio_stream import stream_clients  # 局部导入，避免环依赖
-            for sc in list(stream_clients):
-                if not sc.abort_event.is_set():
-                    try: sc.q.put_nowait(b"\x00"*BYTES_PER_20MS_16K)  # 一帧静音
-                    except Exception: pass
-                    try: sc.q.put_nowait(None)
-                    except Exception: pass
-
-            final_text = ("".join(txt_buf)).strip() or "（空响应）"
-            try:
-                await ui_broadcast_final("[AI] " + final_text)
-            except Exception:
-                pass
-
-    # 真正启动前先硬重置，保证**绝无**旧音频残留
-    await hard_reset_audio("start_ai_with_text")
-    loop = asyncio.get_running_loop()
-    from audio_stream import current_ai_task as _task_holder  # 读写模块内全局
-    from audio_stream import __dict__ as _as_dict
-    # 设置模块内的 current_ai_task
-    task = loop.create_task(_runner())
-    _as_dict["current_ai_task"] = task
+    # ========== 原始大模型实现（已禁用）==========
+    # async def _runner():
+    #     txt_buf: List[str] = []
+    #     rate_state = None
+    #
+    #     # 组装（图像+文本）
+    #     content_list = []
+    #     if last_frames:
+    #         try:
+    #             _, jpeg_bytes = last_frames[-1]
+    #             img_b64 = base64.b64encode(jpeg_bytes).decode("ascii")
+    #             content_list.append({
+    #                 "type": "image_url",
+    #                 "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}
+    #             })
+    #         except Exception:
+    #             pass
+    #     content_list.append({"type": "text", "text": user_text})
+    #
+    #     try:
+    #         async for piece in stream_chat(content_list, voice="Cherry", audio_format="wav"):
+    #             # 文本增量（仅 UI）
+    #             if piece.text_delta:
+    #                 txt_buf.append(piece.text_delta)
+    #                 try:
+    #                     await ui_broadcast_partial("[AI] " + "".join(txt_buf))
+    #                 except Exception:
+    #                     pass
+    #
+    #             # 音频分片：Omni 返回 24k (PCM16) 的 wav audio.data（Base64）；下行需要 8k PCM16
+    #             if piece.audio_b64:
+    #                 try:
+    #                     pcm24 = base64.b64decode(piece.audio_b64)
+    #                 except Exception:
+    #                     pcm24 = b""
+    #                 if pcm24:
+    #                     # 24k → 8k (使用ratecv保证音调和速度不变)
+    #                     pcm8k, rate_state = audioop.ratecv(pcm24, 2, 1, 24000, 8000, rate_state)
+    #                     pcm8k = audioop.mul(pcm8k, 2, 0.60)
+    #                     if pcm8k:
+    #                         await broadcast_pcm16_realtime(pcm8k)
+    #
+    #     except asyncio.CancelledError:
+    #         # 被新一轮打断
+    #         raise
+    #     except Exception as e:
+    #         try:
+    #             await ui_broadcast_final(f"[AI] 发生错误：{e}")
+    #         except Exception:
+    #             pass
+    #     finally:
+    #         # 【修改】标记omni对话结束，恢复之前的导航模式
+    #         global omni_conversation_active, omni_previous_nav_state
+    #         omni_conversation_active = False
+    #
+    #         # 恢复之前的导航状态
+    #         if orchestrator and omni_previous_nav_state:
+    #             orchestrator.force_state(omni_previous_nav_state)
+    #             print(f"[OMNI] 对话结束，恢复到{omni_previous_nav_state}模式")
+    #             omni_previous_nav_state = None
+    #         else:
+    #             print(f"[OMNI] 对话结束（无需恢复导航状态）")
+    #
+    #         # 自然结束时，给当前连接一个 "完结" 信号
+    #         from audio_stream import stream_clients  # 局部导入，避免环依赖
+    #         for sc in list(stream_clients):
+    #             if not sc.abort_event.is_set():
+    #                 try: sc.q.put_nowait(b"\x00"*BYTES_PER_20MS_16K)  # 一帧静音
+    #                 except Exception: pass
+    #                 try: sc.q.put_nowait(None)
+    #                 except Exception: pass
+    #
+    #         final_text = ("".join(txt_buf)).strip() or "（空响应）"
+    #         try:
+    #             await ui_broadcast_final("[AI] " + final_text)
+    #         except Exception:
+    #             pass
+    #
+    # # 真正启动前先硬重置，保证**绝无**旧音频残留
+    # await hard_reset_audio("start_ai_with_text")
+    # loop = asyncio.get_running_loop()
+    # from audio_stream import current_ai_task as _task_holder  # 读写模块内全局
+    # from audio_stream import __dict__ as _as_dict
+    # # 设置模块内的 current_ai_task
+    # task = loop.create_task(_runner())
+    # _as_dict["current_ai_task"] = task
+    # ============================================
 
 # ---------- 页面 / 健康 ----------
 @app.get("/", response_class=HTMLResponse)
@@ -1359,6 +1386,10 @@ async def ws_audio(ws: WebSocket):
         except asyncio.CancelledError:
             return
 
+    # START 节流变量（必须在 while 循环外声明，避免每次消息重置）
+    last_start_time = 0
+    START_COOLDOWN = 1.0  # 1秒冷却时间
+
     try:
         while True:
             if WebSocketState and ws.client_state != WebSocketState.CONNECTED:
@@ -1375,9 +1406,6 @@ async def ws_audio(ws: WebSocket):
             if "text" in msg and msg["text"] is not None:
                 raw = (msg["text"] or "").strip()
                 cmd = raw.upper()
-                # 在 ws_audio 函数内添加全局/局部变量记录最后一次START时间
-                last_start_time = 0  # 新增：记录最后一次START指令时间
-                START_COOLDOWN = 1.0  # 1秒冷却时间
 
                 if cmd == "START":
                     current_time = time.monotonic()
