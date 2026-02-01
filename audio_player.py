@@ -23,17 +23,21 @@ def _init_audio_output():
 
     # 读取输出模式配置
     _output_mode = os.getenv("AIGLASS_AUDIO_OUTPUT", "local")
+    auto_switch = os.getenv("AIGLASS_AUDIO_AUTO_SWITCH", "1") == "1"
 
-    # 初始化蓝牙
-    if _output_mode == "bluetooth":
+    # 初始化蓝牙（输出为 bluetooth 或启用自动切换时都需要初始化管理器用于检测）
+    if _output_mode == "bluetooth" or auto_switch:
         try:
             from bluetooth_audio import get_bluetooth_manager
             _bluetooth_manager = get_bluetooth_manager()
-            if _bluetooth_manager.enabled:
-                print(f"[AUDIO] 蓝牙音频已启用，模式: {_output_mode}")
-                # 尝试自动连接
-                if _bluetooth_manager.auto_connect:
+            if getattr(_bluetooth_manager, "enabled", False):
+                print(f"[AUDIO] 蓝牙音频管理器已启用，模式: {_output_mode}")
+                # 仅在明确使用蓝牙输出时尝试自动连接
+                if _output_mode == "bluetooth" and getattr(_bluetooth_manager, "auto_connect", False):
                     _bluetooth_manager.auto_connect_device()
+            else:
+                if auto_switch:
+                    print("[AUDIO] 蓝牙自动切换已启用：将按播放前检测 bluez sink 来动态路由")
         except ImportError:
             print("[AUDIO] 警告: bluetooth_audio 模块未找到，蓝牙功能不可用")
         except Exception as e:
@@ -335,36 +339,50 @@ def initialize_audio_system():
     print(f"[AUDIO] 音频系统初始化完成（预加载+工作线程，输出模式: {_output_mode}）")
 
 def play_audio_threadsafe(audio_key):
-    """线程安全的音频播放函数"""
-    global _audio_queue, _audio_priority
-    
+    """线程安全的音频播放函数（支持动态蓝牙路由）"""
+    global _audio_queue, _audio_priority, _bluetooth_manager, _output_mode
+
     if not _initialized:
         initialize_audio_system()
-    
+
     if audio_key not in AUDIO_MAP:
         print(f"[AUDIO] 未知的音频键: {audio_key}")
         return
-    
+
     filepath = AUDIO_MAP[audio_key]
     pcm_data = _audio_cache.get(filepath)
     if pcm_data is None:
         print(f"[AUDIO] 音频未在缓存中: {audio_key}")
         return
-    
+
     # 如果是压缩的数据，先解压
     if pcm_data and len(pcm_data) > 5 and pcm_data[0] in [0x01, 0x02]:
         pcm_data = compressed_audio_cache.decompress(pcm_data)
         if not pcm_data:
             print(f"[AUDIO] 解压失败: {audio_key}")
             return
-    
+
+    # 【新增】动态蓝牙检测：如果启用自动切换，每次播放前检查蓝牙状态
+    auto_switch = os.getenv("AIGLASS_AUDIO_AUTO_SWITCH", "1") == "1"
+    if auto_switch and _bluetooth_manager:
+        # 检查当前蓝牙连接状态
+        is_bluetooth_connected = _bluetooth_manager.check_connection()
+        if is_bluetooth_connected:
+            if _output_mode != "bluetooth":
+                _output_mode = "bluetooth"
+                print(f"[AUDIO] 检测到蓝牙已连接，切换音频输出到蓝牙")
+        else:
+            if _output_mode == "bluetooth":
+                _output_mode = "local"
+                print(f"[AUDIO] 蓝牙未连接，切换音频输出到本地扬声器")
+
     # 【优化】实时播报策略：保持队列最小化，避免积压延迟
     queue_size = _audio_queue.qsize()
-    
+
     # 检查是否正在播放
     with _playing_lock:
         currently_playing = _is_playing
-    
+
     # 实时策略：只允许1个积压，超过立即清空
     if queue_size > 0 and not currently_playing:
         # 未播放时立即清空，播放最新语音
@@ -404,18 +422,24 @@ def play_voice_text(text: str):
     传入中文提示，自动匹配 voice 映射并播放。
     - 尝试原文
     - 尝试补全/去除句末标点（。.!！?？）
-    - 若包含“前方有…注意避让”但未命中，降级到“前方有障碍物，注意避让。”
+    - 若包含"前方有…注意避让"但未命中，降级到"前方有障碍物，注意避让。"
     """
     global _last_voice_time, _last_voice_text
-    
+
+    print(f"[AUDIO] play_voice_text 被调用: {text}")
+
     if not text:
+        print(f"[AUDIO] 文本为空，跳过播放")
         return
     if not _initialized:
+        print(f"[AUDIO] 音频系统未初始化，正在初始化...")
         initialize_audio_system()
-    
+        print(f"[AUDIO] 音频系统初始化完成，_initialized={_initialized}")
+
     # 全局节流：相同文本短时间内不重复播放
     current_time = time.time()
     if text == _last_voice_text and current_time - _last_voice_time < _voice_cooldown:
+        print(f"[AUDIO] 节流跳过: {text} (距离上次 {current_time - _last_voice_time:.2f}秒)")
         return  # 静默跳过
 
     candidates = []
@@ -433,28 +457,37 @@ def play_voice_text(text: str):
     # 逐一尝试匹配
     for ck in candidates:
         if ck in AUDIO_MAP:
+            audio_file = AUDIO_MAP[ck]
+            print(f"[AUDIO] 找到映射: '{ck}' -> '{audio_file}'")
+            if os.path.exists(audio_file):
+                print(f"[AUDIO] 音频文件存在，开始播放")
+            else:
+                print(f"[AUDIO] 警告: 音频文件不存在: {audio_file}")
             play_audio_threadsafe(ck)
             _last_voice_text = text
             _last_voice_time = current_time
             return
 
-    # 针对“前方有…注意避让”降级
+    # 针对"前方有…注意避让"降级
     if ("前方有" in t) and ("注意避让" in t):
         fallback = "前方有障碍物，注意避让。"
         if fallback in AUDIO_MAP:
+            print(f"[AUDIO] 降级使用: {fallback}")
             play_audio_threadsafe(fallback)
             _last_voice_text = text
             _last_voice_time = current_time
             return
 
-    # 针对“请向…平移/微调/转动”类词条，常见变体尝试
+    # 针对"请向…平移/微调/转动"类词条，常见变体尝试
     base = t.rstrip("。.!！?？")
     if base in AUDIO_MAP:
+        print(f"[AUDIO] 找到基础映射: '{base}'")
         play_audio_threadsafe(base)
         _last_voice_text = text
         _last_voice_time = current_time
         return
     if base + "。" in AUDIO_MAP:
+        print(f"[AUDIO] 找到带句号映射: '{base}。'")
         play_audio_threadsafe(base + "。")
         _last_voice_text = text
         _last_voice_time = current_time
@@ -463,6 +496,7 @@ def play_voice_text(text: str):
     # ========== TTS 回退（新增）==========
     # 如果没有预录音频，尝试使用 Piper-TTS
     global _piper_tts, _tts_enabled, _worker_loop
+    print(f"[AUDIO] TTS状态: enabled={_tts_enabled}, available={_piper_tts.is_available() if _piper_tts else False}")
     if _tts_enabled and _piper_tts and _piper_tts.is_available():
         try:
             wav_path = _piper_tts.text_to_file(text)
@@ -488,7 +522,7 @@ def play_voice_text(text: str):
             print(f"[AUDIO] TTS 生成失败: {e}")
 
     # 未匹配则输出日志（便于调试）
-    print(f"[AUDIO] 未找到匹配语音: {text}")
+    print(f"[AUDIO] 未找到匹配语音: {text}, 候选: {candidates}")
 
 # 兼容旧接口
 play_audio_on_esp32 = play_audio_threadsafe

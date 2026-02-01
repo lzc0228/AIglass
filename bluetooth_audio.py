@@ -8,6 +8,7 @@
 import os
 import subprocess
 import logging
+import time
 from typing import Optional, List, Dict, Tuple
 from dataclasses import dataclass
 
@@ -36,6 +37,8 @@ class BluetoothAudioManager:
         self.device_addr: Optional[str] = None
         self.device_name: Optional[str] = None
         self.connected = False
+        self._last_check_time = 0.0
+        self._check_interval = float(os.getenv("AIGLASS_BLUETOOTH_CHECK_INTERVAL", "5"))
         self._pulse_client = None
 
         # 从环境变量读取配置
@@ -218,27 +221,66 @@ class BluetoothAudioManager:
             logger.error(f"[BT] 设置音频 sink 失败: {e}")
 
     def is_connected(self) -> bool:
-        """检查蓝牙连接状态"""
-        if not self.enabled or not self.device_addr:
-            return False
+        """检查蓝牙连接状态（使用缓存值）"""
+        return self.connected
 
+    def check_connection(self) -> bool:
+        """
+        主动检测蓝牙连接状态（通过 PulseAudio）
+
+        Returns:
+            bool: 是否有蓝牙音频设备连接
+        """
         try:
+            now = time.time()
+            if now - self._last_check_time < self._check_interval:
+                return self.connected
+            self._last_check_time = now
+
+            # 使用 pactl 检查是否有蓝牙音频 sink 在运行
             result = subprocess.run(
-                ["bluetoothctl", "info", self.device_addr],
+                ["pactl", "list", "sinks", "short"],
                 capture_output=True,
                 text=True,
                 timeout=5
             )
 
-            if "Connected: yes" in result.stdout:
-                self.connected = True
-            else:
+            prev = self.connected
+            detected = False
+
+            # 1) 检查是否有 bluez 设备且状态为 RUNNING
+            for line in result.stdout.split("\n"):
+                if "bluez" in line.lower() and "RUNNING" in line:
+                    self.connected = True
+                    detected = True
+                    break
+
+            # 2) 有 bluez 设备但不是 RUNNING（可能已连接但未播放）
+            if not detected:
+                for line in result.stdout.split("\n"):
+                    if "bluez" in line.lower():
+                        self.connected = False
+                        detected = True
+                        break
+
+            if not detected:
                 self.connected = False
+
+            # 只在状态变化时输出提示，避免刷屏
+            if self.connected != prev:
+                if self.connected:
+                    print("[BT] 检测到蓝牙音频 sink（RUNNING），将切换到蓝牙输出")
+                else:
+                    print("[BT] 未检测到 RUNNING 蓝牙音频 sink，将切换到本地输出")
 
             return self.connected
 
-        except Exception:
-            return False
+        except FileNotFoundError:
+            # pactl 不可用，回退到基本检查
+            return self.connected
+        except Exception as e:
+            logger.error(f"[BT] 检测连接状态失败: {e}")
+            return self.connected
 
     def auto_connect_device(self) -> bool:
         """自动连接到配置的设备"""

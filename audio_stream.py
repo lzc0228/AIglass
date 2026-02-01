@@ -78,13 +78,13 @@ async def hard_reset_audio(reason: str = ""):
 
 async def broadcast_pcm16_realtime(pcm16: bytes):
     """以 20ms 节拍把 pcm16 发送给所有仍存活的连接；队列满丢尾，保持实时。"""
-    # 【新增】录制音频（在分发之前整体录制，避免分片）
-    try:
-        import sync_recorder
-        sync_recorder.record_audio(pcm16, text="[Omni对话]")
-    except Exception:
-        pass  # 静默失败，不影响播放
-    
+    # 【已禁用】录制音频（在分发之前整体录制，避免分片）- 已注释以减少数据传输占用
+    # try:
+    #     import sync_recorder
+    #     sync_recorder.record_audio(pcm16, text="[Omni对话]")
+    # except Exception:
+    #     pass  # 静默失败，不影响播放
+
     loop = asyncio.get_event_loop()
     next_tick = loop.time()
     off = 0

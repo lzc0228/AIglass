@@ -1059,3 +1059,425 @@ sudo systemctl enable bluetooth
 3. 测试骨传导耳机连接和音频传输
 4. 补充预录音频资源
 
+---
+
+# 追加记录：语音映射路径修复 + 创建 voice/map.zh-CN.json（2026-02-01）
+
+> 背景：用户在本次对话中要求我先对照 `plan.md` 复查“移除大模型依赖 + 蓝牙音频输出 + Piper-TTS”相关代码，并在运行时遇到 `未找到映射文件: .../voice/...` 的提示；用户怀疑是映射文件夹路径问题，并要求我直接创建 `voice/map.zh-CN.json` 后再测试。
+
+## 1) 本次对话目标
+
+1. 复查当前实现是否符合 `plan.md`，指出阻塞点与不一致处。
+2. 修复“voice 映射文件找不到”的路径/查找逻辑，并创建最小可用的 `voice/map.zh-CN.json` 以便联调。
+3. 做最小测试验证：启动/导入不崩溃、TTS 可用、映射能被加载。
+
+## 2) 复查结果（对照 plan.md）
+
+### 2.1 已改善/已满足
+
+1. `static/` 目录已存在（用于 FastAPI StaticFiles 挂载），不再因缺少目录导致 `app_main.py` 导入即崩溃。
+2. `ws_audio` 的 START 节流变量已移到 while 循环外（避免每条消息重置，节流生效）。
+
+### 2.2 仍存在的重要问题（影响功能）
+
+1. **YOLOE 障碍物检测不可用**：`ObstacleDetectorClient` 在初始化白名单文本特征时依赖 `clip` 包；当前环境缺少该依赖，且 Ultralytics AutoUpdate 在离线条件下会跳过，导致 `obstacle_detector` 加载失败并回退为 `None`（影响“开放词汇/障碍物”类能力）。
+2. **前端功能可能退化**：`static/main.js` 当前是占位脚本；页面 `templates/index.html` 依赖其完成 WS 连接、画面显示、IMU 面板等交互逻辑，需后续恢复/补齐真实实现。
+3. **蓝牙能力无法在当前服务器环境验证**：缺少 `bluetoothctl/pactl/pulseaudio` 系统命令；且当前播放链路主要是 `/stream.wav` 的 PCM 广播，蓝牙路由需要在 Jetson 上完成系统音频输出（PulseAudio sink）后才能验证“真能在耳机听到”。
+
+## 3) 本次对话新增/修改内容（代码层面）
+
+### 3.1 修复 voice 映射文件路径/查找逻辑
+
+文件：`audio_player.py`
+
+1. **路径解析增强**：对 `VOICE_DIR` / `AIGLASS_AUDIO_DIR` 做统一解析：支持 `~`、环境变量、相对路径按仓库根目录解析，避免因启动目录不同而找不到资源。
+2. **映射文件可配置**：新增支持用 `AIGLASS_VOICE_MAP_FILE`（或 `VOICE_MAP_FILE`）直接指定映射文件路径。
+3. **映射文件自动搜索**：按候选路径列表尝试查找 `map.zh-CN.json`（`VOICE_MAP_FILE` / `VOICE_DIR` / `AIGLASS_AUDIO_DIR` / 默认仓库 `voice/`）。
+4. **files 路径更健壮**：`map.zh-CN.json` 内 `files` 条目支持：
+   - 绝对路径
+   - 相对 map 文件所在目录的相对路径（推荐）
+
+### 3.2 创建最小可用的映射文件
+
+文件：`voice/map.zh-CN.json`
+
+- 新建了一个最小映射（用于跑通流程），把 `"你好"` / `"测试语音"` / `"学长好帅啊"` 映射到现有音频 `music/converted_学长好帅啊.wav`（占位用途，后续需替换为真实语音资源）。
+
+### 3.3 Piper-TTS 相关修复（确保回退可用）
+
+文件：`piper_tts.py`
+
+- 修复 `text_to_file()` 中 `tempfile` 作用域错误：移除函数内重复 `import tempfile`，避免 `UnboundLocalError`。
+
+文件：`scripts/download_piper_model.py`
+
+- 修复下载脚本中误用 `urllib`（未 import 且与 wget 流程重复）导致的异常路径。
+
+文件：`bluetooth_audio.py`
+
+- 修复 `pactl list sinks short` 的 sink 解析：现在优先取第二列 sink name（更符合 `pactl` 输出格式），避免把整行字符串传给 `set-default-sink`。
+
+## 4) 关键测试记录（本地快速验证）
+
+1. `app_main.py` 可被导入（不再因缺少 `static/` 目录崩溃）；但导入会触发模型加载与录制器启动（产生 recordings 文件），属于“导入有副作用”的现状。
+2. `piper` CLI 可用：能成功生成 22050Hz 单声道 16bit WAV（作为 TTS 回退基础）。
+3. `audio_player.initialize_audio_system()` 日志确认：
+   - 能成功读取并合并 `voice/map.zh-CN.json`
+   - 预加载音频数量随映射增加（本次测试为 3 条）
+
+## 5) 本次对话关键决策
+
+1. **映射文件作为可选能力**：没有 `voice/map.zh-CN.json` 时不阻塞系统启动；但会输出明确提示，并推荐通过 `.env` 指定路径。
+2. **先用占位映射跑通闭环**：在语音资源缺失的情况下，先用现有 wav 做占位，确保“文本 -> 映射 -> 播放链路”可验证。
+3. **TTS 以 CLI 为主**：当前环境未安装 `onnxruntime`/`piper` Python 包，仍可通过 `piper` 命令行完成合成，优先保证可用性。
+
+## 6) 假设（本次对话默认成立）
+
+1. Jetson 端最终会具备 `bluetoothctl/pactl/pulseaudio`，并可完成 A2DP 输出与 sink 切换。
+2. 语音资源（`voice/`）会在部署机上提供；当前仓库缺失属于资源未同步而非代码路径错误。
+3. `.env` 中的敏感 Key 不会提交到远端（已被 `.gitignore` 忽略）。
+
+## 7) 未解决问题（需后续处理）
+
+1. **YOLOE 的 CLIP 依赖**：离线/无网络条件下如何安装或内置 `clip`（或改为不依赖文本特征的替代实现）需要明确方案，否则障碍物检测相关能力无法工作。
+2. **前端 main.js**：当前为占位，需恢复真正的 WS/可视化逻辑，否则页面只剩静态 UI。
+3. **蓝牙“实际出声”链路**：需要明确最终播放策略（PulseAudio sink 本机播放 vs 继续用 `/stream.wav` 由客户端播放），并在 Jetson 上做端到端测试。
+4. **语音资源完善**：占位映射需要替换为真实语音提示文件，并补齐更多常用文案（导航/过街/找物品等）。
+
+## 8) 下一步行动（建议顺序）
+
+1. 补齐 `voice/` 语音资源与真实 `map.zh-CN.json`（至少覆盖导航与安全提示高频文案）。
+2. 决定并落实蓝牙播放策略：
+   - 若走 PulseAudio：在 Jetson 上确保系统能播放 WAV/PCM 到默认 sink（蓝牙 A2DP）
+   - 若走 `/stream.wav`：补齐客户端播放器并保证其输出到蓝牙
+3. 解决 YOLOE/CLIP 依赖（离线安装包或替代实现），恢复障碍物检测链路。
+4. 恢复 `static/main.js` 的真实实现（或从历史版本找回），确保 UI/IMU/WS 功能正常。
+
+---
+
+# 追加记录：系统优化（语音播报修复 + 数据传输移除 + 户外提醒 + 音频路由 + 主动场景识别）
+
+日期：2026-02-01
+
+## 1) 本轮目标
+
+用户在实际测试中发现以下问题，要求进行系统优化：
+
+1. **语音播报问题**：有摄像头画面但没有语音播报
+2. **数据传输占用**：摄像头帧率25fps左右，希望注释掉所有存储视频/语音的代码，只保留实时识别
+3. **户外天黑提醒**（可选）：户外天黑时检测到屏幕亮度较暗，提醒用户可以打开灯光让别人知道是盲人
+4. **音频动态路由**：麦克风和耳机二选一，连接耳机后不再外音播报，使用麦克风不占用蓝牙通道传输
+5. **主动场景识别**（新增需求）：接收到画面之后，需要实时处理，主动去运行功能然后输出给用户
+
+## 2) 用户问题分析
+
+### 2.1 语音播报不工作的可能原因
+
+经过代码探索，发现以下可能原因：
+
+1. **导航状态未启动**：orchestrator 处于 IDLE/CHAT 状态，未进入盲道导航模式，不会生成 `guidance_text`
+2. **音频映射缺失**：`AUDIO_MAP` 中没有对应语音文件的路径
+3. **音频系统未初始化**：`initialize_audio_system()` 失败或未调用
+4. **TTS 未启用且预录音频缺失**：无音频文件可播放
+5. **播报被节流**：相同文本1秒内不会重复播放
+
+### 2.2 数据传输占用分析
+
+经过探索，发现以下占用数据传输的代码：
+
+| 文件 | 位置 | 功能 |
+|------|------|------|
+| `sync_recorder.py` | 整个文件 | 视频录制（cv2.VideoWriter）+ 音频录制（wave）|
+| `event_logger.py` | 整个文件 | JSONL 事件记录 |
+| `app_main.py` | 314-317行 | 启动录制器 |
+| `app_main.py` | 1608-1613行 | 每帧录制 |
+| `app_main.py` | 2100-2111行 | 初始化事件记录器 |
+| `app_main.py` | 1685-1688行 | 语义事件日志 |
+| `audio_stream.py` | 81-86行 | 音频录制调用 |
+
+### 2.3 户外天黑提醒设计
+
+系统已有 `night_mode.py`（夜间检测）和 `light_reminder.py`（关灯提醒），可以复用这些模块：
+
+- 使用 `night_detector.process_frame()` 检测是否进入夜间模式
+- 新增 `_check_if_outdoor()` 函数判断是否在户外（基于亮度分布：天空比地面亮）
+- 结合两者判断是否需要提醒用户开灯
+
+### 2.4 音频动态路由设计
+
+当前系统已有 `bluetooth_audio.py` 模块，但缺少运行时动态检测：
+
+- 需要添加 `check_connection()` 方法，通过 `pactl list sinks short` 检测蓝牙连接状态
+- 在 `play_audio_threadsafe()` 中每次播放前检测，动态切换输出模式
+
+### 2.5 主动场景识别设计
+
+系统当前需要用户说"开始导航"才会进入导航模式并播报信息。用户希望：
+
+1. **接收到画面后自动运行检测**
+2. **主动播报有用信息**
+
+需要实现的场景检测：
+- 盲道检测 → "前方检测到盲道"
+- 斑马线检测 → "发现斑马线"
+- 红绿灯检测 → "前方是红灯/绿灯/黄灯"
+- 障碍物检测 → "前方有障碍物，注意安全"
+
+## 3) 本次对话关键决策
+
+1. **保留文件，注释调用**：对于 `sync_recorder.py` 和 `event_logger.py`，只注释调用而不删除文件，方便后续需要时恢复
+2. **调试日志增强**：在 `play_voice_text()` 中添加详细的调试日志，便于排查语音播报问题
+3. **启动测试语音**：在系统启动时播放 "系统已启动"，验证音频系统是否正常工作
+4. **简单版户外判断**：使用基于亮度分布的简单方法判断是否在户外，避免引入复杂模型
+5. **动态检测间隔**：自动场景识别设置3秒间隔，避免频繁播报影响用户体验
+6. **蓝牙检测优化**：使用 `pactl` 而非 `bluetoothctl` 检测蓝牙连接状态，更适合音频场景
+
+## 4) 已实施的改动（代码级别）
+
+### 4.1 修复语音播报问题
+
+**文件：`audio_player.py`**
+
+- 增强 `play_voice_text()` 函数的调试日志：
+  ```python
+  print(f"[AUDIO] play_voice_text 被调用: {text}")
+  print(f"[AUDIO] 音频系统未初始化，正在初始化...")
+  print(f"[AUDIO] 找到映射: '{ck}' -> '{audio_file}'")
+  print(f"[AUDIO] TTS状态: enabled={_tts_enabled}")
+  print(f"[AUDIO] 未找到匹配语音: {text}, 候选: {candidates}")
+  ```
+
+**文件：`app_main.py`**
+
+- 修改启动函数，添加测试语音：
+  ```python
+  @app.on_event("startup")
+  async def on_startup_init_audio():
+      # ... 初始化代码 ...
+      await asyncio.sleep(2)
+      play_voice_text("系统已启动")
+  ```
+
+### 4.2 移除数据传输占用
+
+**文件：`app_main.py`**
+
+- 注释录制器启动（第314-341行）
+- 注释帧录制调用（第1608-1613行）
+- 注释事件记录器初始化（第2108-2121行）
+- 注释事件记录器关闭（第2174-2179行）
+- 注释所有 `event_logger.log()` 调用（第405-420行、第998-1002行、第1685-1689行）
+
+**文件：`audio_stream.py`**
+
+- 注释音频录制调用（第81-86行）
+
+### 4.3 户外天黑提醒
+
+**文件：`app_main.py`**
+
+- 添加全局变量：
+  ```python
+  night_light_reminder_enabled = os.getenv("AIGLASS_NIGHT_LIGHT_REMINDER", "1") == "1"
+  night_light_reminder_cooldown = float(os.getenv("AIGLASS_NIGHT_LIGHT_COOLDOWN", "600"))
+  last_night_light_remind_time = 0.0
+  ```
+
+- 实现 `_check_if_outdoor()` 辅助函数：
+  ```python
+  def _check_if_outdoor(bgr_image: np.ndarray) -> bool:
+      # 基于亮度分布：天空比地面亮 = 户外
+      gray = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)
+      top_mean = np.mean(gray[:h//2, :])
+      bottom_mean = np.mean(gray[h//2:, :])
+      return (top_mean > bottom_mean * 1.2) and (top_mean > 30)
+  ```
+
+- 在夜间模式检测后添加提醒逻辑（第1643-1675行）
+
+### 4.4 音频动态路由
+
+**文件：`bluetooth_audio.py`**
+
+- 增强连接检测，添加 `check_connection()` 方法：
+  ```python
+  def check_connection(self) -> bool:
+      # 使用 pactl 检查是否有 bluez 设备在 RUNNING
+      result = subprocess.run(["pactl", "list", "sinks", "short"], ...)
+      for line in result.stdout.split("\n"):
+          if "bluez" in line.lower() and "RUNNING" in line:
+              self.connected = True
+              return True
+  ```
+
+**文件：`audio_player.py`**
+
+- 修改 `play_audio_threadsafe()` 函数，添加动态蓝牙检测：
+  ```python
+  auto_switch = os.getenv("AIGLASS_AUDIO_AUTO_SWITCH", "1") == "1"
+  if auto_switch and _bluetooth_manager:
+      is_bluetooth_connected = _bluetooth_manager.check_connection()
+      # 动态切换 _output_mode
+  ```
+
+### 4.5 主动场景识别
+
+**文件：`app_main.py`**
+
+- 添加全局变量：
+  ```python
+  auto_scene_detection = os.getenv("AIGLASS_AUTO_SCENE_DETECTION", "1") == "1"
+  auto_detection_interval = float(os.getenv("AIGLASS_AUTO_DETECTION_INTERVAL", "3.0"))
+  last_auto_detection_time = 0.0
+  current_detected_scene = "unknown"
+  ```
+
+- 实现 `_detect_scene()` 场景检测函数：
+  ```python
+  def _detect_scene(bgr_image: np.ndarray) -> Tuple[str, float]:
+      # 1. 检测盲道
+      # 2. 检测斑马线
+      # 3. 检测红绿灯
+      # 4. 检测障碍物
+      return scene_type, confidence
+  ```
+
+- 实现 `_get_scene_announcement()` 场景播报函数：
+  ```python
+  def _get_scene_announcement(scene: str) -> Optional[str]:
+      announcements = {
+          "blindpath": "前方检测到盲道",
+          "crosswalk": "发现斑马线",
+          "traffic_light_red": "前方是红灯",
+          ...
+      }
+  ```
+
+- 在帧处理循环中添加自动场景检测逻辑（第1720-1740行）
+
+### 4.6 配置文件更新
+
+**文件：`.env.example`**
+
+- 添加户外天黑提醒配置：
+  ```bash
+  AIGLASS_NIGHT_LIGHT_REMINDER=1
+  AIGLASS_NIGHT_LIGHT_COOLDOWN=600
+  ```
+
+- 添加音频动态路由配置：
+  ```bash
+  AIGLASS_AUDIO_AUTO_SWITCH=1
+  ```
+
+- 添加自动场景识别配置：
+  ```bash
+  AIGLASS_AUTO_SCENE_DETECTION=1
+  AIGLASS_AUTO_DETECTION_INTERVAL=3
+  ```
+
+## 5) 关键假设（本次对话默认成立）
+
+1. **摄像头能正常提供画面**：ESP32 或其他摄像头设备能正常连接并通过 `/ws/camera` 发送 JPEG 帧
+2. **Jetson 支持 PulseAudio**：蓝牙音频检测依赖 `pactl` 命令，需要系统安装并运行 PulseAudio
+3. **预录音频文件存在**：`music/` 目录下有对应的 WAV 文件，或者 TTS 可用
+4. **各检测模块可正常工作**：`workflow_blindpath.py`、`workflow_crossstreet.py`、`trafficlight_detection.py` 等模块可正常导入和调用
+
+## 6) 未解决问题 / 风险点
+
+1. **YOLOE 的 CLIP 依赖**：障碍物检测依赖 YOLOE，而 YOLOE 需要 CLIP 模块，当前环境缺少此依赖
+2. **蓝牙检测依赖系统命令**：`pactl` 命令在某些环境可能不可用，需要 Jetson 端安装 pulseaudio
+3. **场景检测准确性**：基于简单规则的场景检测可能误判，需要实际测试验证
+4. **户外判断准确性**：基于亮度分布的户外判断可能在某些场景下误判（如室内有大窗户）
+5. **语音资源不完整**：`AUDIO_MAP` 中可能缺少某些播报文本的音频文件
+
+## 7) 下一步行动（建议顺序）
+
+1. **实际运行测试**：
+   - 在 Jetson 端运行 `python app_main.py`
+   - 连接摄像头和耳机测试语音播报
+   - 验证启动时能听到 "系统已启动"
+
+2. **验证数据传输已移除**：
+   - 检查 `recordings/` 目录不再生成新文件
+   - 确认帧率保持在 25fps 左右
+
+3. **测试户外天黑提醒**：
+   - 模拟夜间户外环境
+   - 验证能触发提醒且10分钟内不重复
+
+4. **测试音频动态路由**：
+   - 连接/断开蓝牙耳机
+   - 验证音频能正确切换输出
+
+5. **测试主动场景识别**：
+   - 用摄像头对准盲道/斑马线/红绿灯/障碍物
+   - 验证能正确播报对应的提示信息
+
+6. **补充语音资源**：
+   - 根据实际需要补全 `music/` 目录的音频文件
+   - 或者确保 TTS 可用作为回退方案
+
+## 8) 修改文件清单
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `audio_player.py` | 修改 | 增强调试日志、动态蓝牙检测 |
+| `app_main.py` | 修改 | 测试语音、注释录制、户外提醒、主动场景识别 |
+| `audio_stream.py` | 修改 | 注释音频录制 |
+| `bluetooth_audio.py` | 修改 | 增强 check_connection() 方法 |
+| `.env.example` | 修改 | 添加新配置选项 |
+
+---
+
+# 2026-02-01（代码Review：对齐 `2.01修改意见.md`）
+
+## 本次检查结论（关键问题）
+
+1. **`/ws/camera` 运行期会崩（Python 作用域问题）**
+   - 现象：在 `ws_camera_esp` 内对 `last_night_light_remind_time / last_auto_detection_time / current_detected_scene` 有“读+写”，但未声明 `global`。
+   - 风险：首次触发“户外天黑提醒 / 自动场景识别”时会抛 `UnboundLocalError`，导致相机WS逻辑异常。
+   - 处理：已在 `ws_camera_esp` 顶部补齐 `global` 声明。
+
+2. **自动场景识别 `_detect_scene()` 原实现存在 API 不匹配（导致永远检测不到）**
+   - 原因：
+     - 盲道检测误用 `blind_result.has_blind_path`（`workflow_blindpath.BlindPathNavigator.process_frame()` 返回的是 `ProcessingResult`，无该字段）。
+     - 斑马线检测调用不存在的 `find_crosswalk`（`workflow_crossstreet.CrossStreetNavigator` 无该方法）。
+   - 处理：重写 `_detect_scene()`：
+     - 盲道/斑马线：复用 `BlindPathNavigator._detect_path_and_crosswalk()` 的分割掩码做轻量判定（并避免模型未加载时的“模拟掩码”误报）。
+     - 红绿灯：复用 `navigation_master.TrafficLightDetector`（有后端则走后端，否则 HSV 回退）。
+     - 障碍物：仍用 `obstacle_detector.detect()`（若可用）。
+     - 多候选时：按置信度排序，置信度接近时偏向更安全关键的类别（障碍物/红灯优先）。
+
+3. **蓝牙“自动切换”存在可用性与性能风险**
+   - 风险点：
+     - 之前 `_bluetooth_manager` 仅在 `AIGLASS_AUDIO_OUTPUT=bluetooth` 时初始化 → 若默认 `local/esp32`，自动切换逻辑不会生效。
+     - `check_connection()` 每次播报都跑 `pactl`，可能频繁创建子进程导致延迟/刷屏。
+   - 处理：
+     - `audio_player._init_audio_output()`：当 `AIGLASS_AUDIO_AUTO_SWITCH=1` 时也会初始化蓝牙管理器（用于检测）。
+     - `bluetooth_audio.BluetoothAudioManager.check_connection()`：
+       - 不再依赖 `AIGLASS_BLUETOOTH_ENABLED` 才能检测（检测本身只需 `pactl`）。
+       - 增加 5 秒缓存（`AIGLASS_BLUETOOTH_CHECK_INTERVAL`，默认 5s）。
+       - 仅在连接状态变化时打印提示，避免刷屏。
+
+## 已验证
+
+- 静态语法检查通过：`python -m py_compile app_main.py audio_player.py bluetooth_audio.py audio_stream.py`
+
+## 仍需明确/未解决（需上机验证）
+
+1. **“连接耳机后不外放”的端到端链路**
+   - 当前服务端播放链路仍主要是 `/stream.wav` 的 PCM 广播；`audio_player` 的 `_output_mode` 切换目前只是状态/日志，不会改变实际出声设备。
+   - 需要明确最终策略：
+     - 由 Jetson 本机播放器拉 `/stream.wav` 并通过 PulseAudio 输出到蓝牙；或
+     - 由 ESP32/客户端侧根据蓝牙状态决定是否连接 `/stream.wav`（从源头避免外放）。
+
+2. **障碍物检测依赖（YOLOE + CLIP）**
+   - 当前环境缺 `clip` 时会影响 YOLOE 的开放词表障碍物；需在 Jetson 端装齐依赖并验证。
+
+## 下一步建议（建议顺序）
+
+1. Jetson 端实机测试：启动后确认能听到“系统已启动”或 TTS 回退语音。
+2. 摄像头接入后测试：3 秒一次的自动场景播报是否稳定且不刷屏。
+3. 夜间户外测试：触发“天色已晚…”提醒，并验证冷却时间有效。
+4. 蓝牙连接/断开测试：确认 `pactl` 能检测到 bluez sink，并验证“只在耳机出声不外放”的最终链路。

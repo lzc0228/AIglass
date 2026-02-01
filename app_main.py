@@ -186,6 +186,17 @@ face_friend_recognizer: Optional[FaceFriendRecognizer] = None
 light_detector = None
 light_reminder_enabled = False
 
+# 【新增】户外天黑提醒（夜间户外提醒用户开灯让别人知道是盲人）
+night_light_reminder_enabled = os.getenv("AIGLASS_NIGHT_LIGHT_REMINDER", "1") == "1"
+night_light_reminder_cooldown = float(os.getenv("AIGLASS_NIGHT_LIGHT_COOLDOWN", "600"))  # 10分钟冷却
+last_night_light_remind_time = 0.0
+
+# 【新增】自动场景识别（接收到画面后自动运行检测并主动播报）
+auto_scene_detection = os.getenv("AIGLASS_AUTO_SCENE_DETECTION", "1") == "1"
+auto_detection_interval = float(os.getenv("AIGLASS_AUTO_DETECTION_INTERVAL", "3.0"))  # 检测间隔（秒）
+last_auto_detection_time = 0.0
+current_detected_scene = "unknown"  # blindpath / crosswalk / obstacle / traffic_light / unknown
+
 # 【新增】场景探索 / 语义输出
 semantic_engine = None
 scene_exploration_enabled = False
@@ -311,34 +322,34 @@ print("[NAVIGATION] 开始加载导航模型...")
 load_navigation_models()
 print(f"[NAVIGATION] 模型加载完成 - yolo_seg_model: {yolo_seg_model is not None}")
 
-# 【新增】启动同步录制
-print("[RECORDER] 启动同步录制系统...")
-sync_recorder.start_recording()
-print("[RECORDER] 录制系统已启动，将自动保存视频和音频")
+# 【已禁用】启动同步录制 - 已注释以减少数据传输占用
+# print("[RECORDER] 启动同步录制系统...")
+# sync_recorder.start_recording()
+# print("[RECORDER] 录制系统已启动，将自动保存视频和音频")
 
-# 【新增】注册退出处理器，确保Ctrl+C时保存录制文件
-def cleanup_on_exit():
-    """程序退出时的清理工作"""
-    print("\n[SYSTEM] 正在关闭录制器...")
-    try:
-        sync_recorder.stop_recording()
-        print("[SYSTEM] 录制文件已保存")
-    except Exception as e:
-        print(f"[SYSTEM] 关闭录制器时出错: {e}")
+# 【已禁用】注册退出处理器，确保Ctrl+C时保存录制文件
+# def cleanup_on_exit():
+#     """程序退出时的清理工作"""
+#     print("\n[SYSTEM] 正在关闭录制器...")
+#     try:
+#         sync_recorder.stop_recording()
+#         print("[SYSTEM] 录制文件已保存")
+#     except Exception as e:
+#         print(f"[SYSTEM] 关闭录制器时出错: {e}")
+#
+# def signal_handler(sig, frame):
+#     """处理Ctrl+C信号"""
+#     print("\n[SYSTEM] 收到中断信号，正在安全退出...")
+#     cleanup_on_exit()
+#     import sys
+#     sys.exit(0)
+#
+# # 注册信号处理器
+# signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+# signal.signal(signal.SIGTERM, signal_handler)  # 终止信号
+# atexit.register(cleanup_on_exit)  # 正常退出时也调用
 
-def signal_handler(sig, frame):
-    """处理Ctrl+C信号"""
-    print("\n[SYSTEM] 收到中断信号，正在安全退出...")
-    cleanup_on_exit()
-    import sys
-    sys.exit(0)
-
-# 注册信号处理器
-signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
-signal.signal(signal.SIGTERM, signal_handler)  # 终止信号
-atexit.register(cleanup_on_exit)  # 正常退出时也调用
-
-print("[RECORDER] 已注册退出处理器 - Ctrl+C时会自动保存录制文件")
+# print("[RECORDER] 已注册退出处理器 - Ctrl+C时会自动保存录制文件")
 
 
 
@@ -401,24 +412,24 @@ async def ui_broadcast_final(text: str):
         recent_finals = recent_finals[-RECENT_MAX:]
     await ui_broadcast_raw("FINAL:" + text)
     print(f"[ASR/AI FINAL] {text}", flush=True)
-    # 记录结构化事件（不影响主流程）
-    try:
-        if event_logger is not None:
-            m = re.match(r"^\\[(.*?)\\]\\s*", text or "")
-            tag = m.group(1) if m else None
-            st = orchestrator.get_state() if orchestrator else None
-            event_logger.log(
-                {
-                    "type": "ui_final",
-                    "tag": tag,
-                    "text": text,
-                    "state": st,
-                    "imu_yaw_deg": globals().get("latest_yaw_deg"),
-                    "imu_yaw_rate_dps": globals().get("latest_yaw_rate_dps"),
-                }
-            )
-    except Exception:
-        pass
+    # 【已禁用】记录结构化事件（不影响主流程）
+    # try:
+    #     if event_logger is not None:
+    #         m = re.match(r"^\\[(.*?)\\]\\s*", text or "")
+    #         tag = m.group(1) if m else None
+    #         st = orchestrator.get_state() if orchestrator else None
+    #         event_logger.log(
+    #             {
+    #                 "type": "ui_final",
+    #                 "tag": tag,
+    #                 "text": text,
+    #                 "state": st,
+    #                 "imu_yaw_deg": globals().get("latest_yaw_deg"),
+    #                 "imu_yaw_rate_dps": globals().get("latest_yaw_rate_dps"),
+    #             }
+    #         )
+    # except Exception:
+    #     pass
 
 async def full_system_reset(reason: str = ""):
     """
@@ -995,11 +1006,12 @@ async def start_ai_with_text_custom(user_text: str):
                 imu_yaw_deg=latest_yaw_deg,
                 imu_yaw_rate_dps=latest_yaw_rate_dps,
             )
-            try:
-                if event_logger is not None:
-                    event_logger.log({"type": "semantic_once", "state": orchestrator.get_state() if orchestrator else None, "payload": out})
-            except Exception:
-                pass
+            # 【已禁用】记录语义事件
+            # try:
+            #     if event_logger is not None:
+            #         event_logger.log({"type": "semantic_once", "state": orchestrator.get_state() if orchestrator else None, "payload": out})
+            # except Exception:
+            #     pass
             msg = out.get("text") or "我暂时无法生成描述。"
             await ui_broadcast_final(f"[导航] {msg}")
             play_voice_text(msg)
@@ -1488,6 +1500,7 @@ async def ws_audio(ws: WebSocket):
 async def ws_camera_esp(ws: WebSocket):
     global esp32_camera_ws, blind_path_navigator, cross_street_navigator, cross_street_active, navigation_active, orchestrator
     global last_semantic_emit_ts, scene_exploration_enabled
+    global last_night_light_remind_time, last_auto_detection_time, current_detected_scene
     if esp32_camera_ws is not None:
         await ws.close(code=1013)
         return
@@ -1604,14 +1617,14 @@ async def ws_camera_esp(ws: WebSocket):
             if "bytes" in msg and msg["bytes"] is not None:
                 data = msg["bytes"]
                 frame_counter += 1
-                
-                # 【新增】录制原始帧
-                try:
-                    sync_recorder.record_frame(data)
-                except Exception as e:
-                    if frame_counter % 100 == 0:  # 避免日志刷屏
-                        print(f"[RECORDER] 录制帧失败: {e}")
-                
+
+                # 【已禁用】录制原始帧 - 已注释以减少数据传输占用
+                # try:
+                #     sync_recorder.record_frame(data)
+                # except Exception as e:
+                #     if frame_counter % 100 == 0:  # 避免日志刷屏
+                #         print(f"[RECORDER] 录制帧失败: {e}")
+
                 try:
                     last_frames.append((time.time(), data))
                 except Exception:
@@ -1646,6 +1659,18 @@ async def ws_camera_esp(ws: WebSocket):
                         if night_result.get('changed', False):
                             # 夜间模式切换回调已在初始化时设置
                             pass
+
+                        # 【新增】户外天黑提醒：夜间模式下检测是否户外，提醒用户开灯让别人知道是盲人
+                        if night_light_reminder_enabled and night_result.get('is_night', False):
+                            current_time = time.time()
+                            if (current_time - last_night_light_remind_time) > night_light_reminder_cooldown:
+                                is_outdoor = _check_if_outdoor(bgr)
+                                if is_outdoor:
+                                    msg = "天色已晚，建议打开指示灯，让别人注意到您。"
+                                    play_voice_text(msg)
+                                    await ui_broadcast_final(f"[导航] {msg}")
+                                    last_night_light_remind_time = current_time
+                                    print(f"[NIGHT_LIGHT] 已提醒用户开灯 (冷却时间: {night_light_reminder_cooldown}秒)")
                     except Exception as e:
                         if frame_counter % 100 == 0:
                             print(f"[NIGHT_MODE] 检测失败: {e}")
@@ -1681,11 +1706,12 @@ async def ws_camera_esp(ws: WebSocket):
                                 imu_yaw_deg=latest_yaw_deg,
                                 imu_yaw_rate_dps=latest_yaw_rate_dps,
                             )
-                            try:
-                                if event_logger is not None:
-                                    event_logger.log({"type": "semantic_auto", "state": st, "payload": out})
-                            except Exception:
-                                pass
+                            # 【已禁用】记录语义自动事件
+                            # try:
+                            #     if event_logger is not None:
+                            #         event_logger.log({"type": "semantic_auto", "state": st, "payload": out})
+                            # except Exception:
+                            #     pass
                             if out.get("should_speak", False) and out.get("text"):
                                 play_voice_text(out["text"])
                                 await ui_broadcast_final(f"[导航] {out['text']}")
@@ -1693,6 +1719,26 @@ async def ws_camera_esp(ws: WebSocket):
                     except Exception as e:
                         if frame_counter % 200 == 0:
                             print(f"[SEMANTIC] 输出失败: {e}")
+
+                # 【新增】自动场景识别：接收到画面后自动运行检测并主动播报
+                if auto_scene_detection and bgr is not None:
+                    current_time = time.time()
+                    if (current_time - last_auto_detection_time) >= auto_detection_interval:
+                        last_auto_detection_time = current_time
+
+                        try:
+                            scene, confidence = _detect_scene(bgr)
+                            # 场景切换或高置信度时播报
+                            if scene != current_detected_scene and confidence > 0.6:
+                                current_detected_scene = scene
+                                msg = _get_scene_announcement(scene)
+                                if msg:
+                                    play_voice_text(msg)
+                                    await ui_broadcast_final(f"[导航] {msg}")
+                                    print(f"[AUTO_SCENE] 检测到场景: {scene}, 播报: {msg}")
+                        except Exception as e:
+                            if frame_counter % 200 == 0:
+                                print(f"[AUTO_SCENE] 检测失败: {e}")
 
                 # 【托管】优先交给统领状态机（寻物未占用画面时）
                 # 【修改】找物品模式时不执行导航处理，让yolomedia接管画面
@@ -1928,6 +1974,133 @@ def _wrap180(a: float) -> float:
     if a < -180.0: a += 360.0
     return a
 
+def _check_if_outdoor(bgr_image: np.ndarray) -> bool:
+    """
+    简单判断是否在户外环境。
+    基于亮度分布特征：户外天空通常比地面亮。
+    """
+    if bgr_image is None or bgr_image.size == 0:
+        return False
+
+    try:
+        gray = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape
+
+        # 上半部分（天空）和下半部分（地面）亮度对比
+        top_half = gray[:h//2, :]
+        bottom_half = gray[h//2:, :]
+        top_mean = float(np.mean(top_half))
+        bottom_mean = float(np.mean(bottom_half))
+        overall_mean = float(np.mean(gray))
+
+        # 户外特征：
+        # 1. 天空比地面亮（top_mean > bottom_mean * 1.2）
+        # 2. 整体亮度不太暗（>30，表示有环境光）
+        # 3. 天空亮度显著高于整体
+        is_outdoor = (
+            (top_mean > bottom_mean * 1.2) and
+            (top_mean > 30) and
+            (top_mean > overall_mean * 1.1)
+        )
+
+        return is_outdoor
+    except Exception as e:
+        print(f"[NIGHT_LIGHT] 户外判断失败: {e}")
+        return False
+
+def _detect_scene(bgr_image: np.ndarray) -> Tuple[str, float]:
+    """
+    检测当前场景，返回 (scene_type, confidence)
+    scene_type: blindpath / crosswalk / obstacle / traffic_light_red / traffic_light_green / traffic_light_yellow / unknown
+    """
+    if bgr_image is None or bgr_image.size == 0:
+        return "unknown", 0.0
+
+    candidates: List[Tuple[str, float]] = []
+
+    # 1) 盲道 / 斑马线：优先复用 BlindPathNavigator 的分割输出（避免每次新建对象）
+    try:
+        if blind_path_navigator is not None and hasattr(blind_path_navigator, "_detect_path_and_crosswalk"):
+            # 避免在模型未加载时使用 workflow_blindpath 内部的“模拟掩码”，防止误报
+            if getattr(blind_path_navigator, "yolo_model", None) is not None:
+                blind_mask, crosswalk_mask = blind_path_navigator._detect_path_and_crosswalk(bgr_image)
+
+                if blind_mask is not None and blind_mask.size > 0:
+                    blind_ratio = float(np.mean(blind_mask > 0))
+                    if blind_ratio >= 0.006:
+                        conf = min(0.95, 0.55 + blind_ratio * 12.0)
+                        candidates.append(("blindpath", conf))
+
+                if crosswalk_mask is not None and crosswalk_mask.size > 0:
+                    cross_ratio = float(np.mean(crosswalk_mask > 0))
+                    if cross_ratio >= 0.01:
+                        conf = min(0.95, 0.60 + cross_ratio * 10.0)
+                        candidates.append(("crosswalk", conf))
+    except Exception:
+        pass
+
+    # 2) 红绿灯：复用 navigation_master 的 TrafficLightDetector（有后端则用后端，否则 HSV 回退）
+    try:
+        from navigation_master import TrafficLightDetector
+        tld = TrafficLightDetector()
+        color, _meta = tld.detect(bgr_image)
+        if color in ("red", "green", "yellow"):
+            candidates.append((f"traffic_light_{color}", 0.85))
+    except Exception:
+        pass
+
+    # 3) 障碍物：使用 obstacle_detector（若可用）
+    try:
+        global obstacle_detector
+        if obstacle_detector is not None:
+            detections = obstacle_detector.detect(bgr_image)
+            if detections:
+                largest = max(detections, key=lambda d: d.get("area", 0) or 0)
+                area = float(largest.get("area", 0) or 0)
+                if area > 10000:
+                    conf = 0.70
+                    area_ratio = largest.get("area_ratio", None)
+                    try:
+                        if area_ratio is not None:
+                            conf = min(0.95, 0.60 + float(area_ratio) * 2.0)
+                    except Exception:
+                        pass
+                    candidates.append(("obstacle", conf))
+    except Exception:
+        pass
+
+    if not candidates:
+        return "unknown", 0.0
+
+    # 4) 选取置信度最高的场景；若相近，则偏向更“安全关键”的类别
+    pri = {
+        "obstacle": 4,
+        "traffic_light_red": 4,
+        "traffic_light_yellow": 3,
+        "traffic_light_green": 3,
+        "crosswalk": 2,
+        "blindpath": 1,
+        "unknown": 0,
+    }
+    candidates.sort(key=lambda x: (x[1], pri.get(x[0], 0)), reverse=True)
+    return candidates[0]
+
+def _get_scene_announcement(scene: str) -> Optional[str]:
+    """
+    根据场景返回播报文本
+    返回 None 表示不播报
+    """
+    announcements = {
+        "blindpath": "前方检测到盲道",
+        "crosswalk": "发现斑马线",
+        "traffic_light_red": "前方是红灯",
+        "traffic_light_green": "前方是绿灯",
+        "traffic_light_yellow": "前方是黄灯",
+        "obstacle": "前方有障碍物，注意安全",
+        "unknown": None  # 未知场景不播报
+    }
+    return announcements.get(scene)
+
 def process_imu_and_maybe_store(d: Dict[str, Any]):
     global gLP, gOff, yaw, Rf, Pf, Yf, ref, holdStart, isStill, last_ts_imu, last_wall
     global latest_yaw_deg, latest_yaw_rate_dps, latest_yaw_ts, _prev_yaw_for_rate, _prev_yaw_ts_for_rate
@@ -2091,24 +2264,34 @@ async def on_startup_init_audio():
     def _init():
         try:
             initialize_audio_system()
+            print(f"[AUDIO] 音频系统初始化完成")
         except Exception as e:
             print(f"[AUDIO] 初始化失败: {e}")
-    
+
     threading.Thread(target=_init, daemon=True).start()
 
-@app.on_event("startup")
-async def on_startup_init_event_logger():
-    """启动时初始化事件记录器（JSONL）"""
-    global event_logger
+    # 等待音频系统初始化，然后播放测试语音
+    await asyncio.sleep(2)  # 等待初始化完成
     try:
-        event_logger = get_event_logger()
-        if getattr(event_logger, "enabled", False):
-            print(f"[EVENT] 事件记录已开启: {getattr(event_logger, 'path', '')}")
-        else:
-            print("[EVENT] 事件记录未开启")
+        play_voice_text("系统已启动")
+        print("[AUDIO] 已播放测试语音: 系统已启动")
     except Exception as e:
-        event_logger = None
-        print(f"[EVENT] 初始化失败: {e}")
+        print(f"[AUDIO] 测试语音播放失败: {e}")
+
+# 【已禁用】启动时初始化事件记录器（JSONL）- 已注释以减少数据传输占用
+# @app.on_event("startup")
+# async def on_startup_init_event_logger():
+#     """启动时初始化事件记录器（JSONL）"""
+#     global event_logger
+#     try:
+#         event_logger = get_event_logger()
+#         if getattr(event_logger, "enabled", False):
+#             print(f"[EVENT] 事件记录已开启: {getattr(event_logger, 'path', '')}")
+#         else:
+#             print("[EVENT] 事件记录未开启")
+#     except Exception as e:
+#         event_logger = None
+#         print(f"[EVENT] 初始化失败: {e}")
 
 @app.on_event("startup")
 async def on_startup_init_face_friend():
@@ -2159,13 +2342,13 @@ async def on_shutdown():
     # 停止音频和AI任务
     await hard_reset_audio("shutdown")
 
-    # 关闭事件记录器（可选）
-    try:
-        if event_logger is not None:
-            event_logger.close()
-    except Exception:
-        pass
-    
+    # 【已禁用】关闭事件记录器（可选）
+    # try:
+    #     if event_logger is not None:
+    #         event_logger.close()
+    # except Exception:
+    #     pass
+
     print("[SHUTDOWN] 资源清理完成")
 
 # app_main.py —— 在文件里已有的 @app.on_event("startup") 之后，再加一个新的 startup 钩子
