@@ -2260,6 +2260,13 @@ async def on_startup_register_bridge_sender():
 @app.on_event("startup")
 async def on_startup_init_audio():
     """启动时初始化音频系统"""
+    # 记录 FastAPI 主事件循环，供音频工作线程正确调度 /stream.wav 广播
+    try:
+        import audio_stream as _as
+        _as.set_server_loop(asyncio.get_running_loop())
+    except Exception:
+        pass
+
     # 在后台线程中初始化，避免阻塞启动
     def _init():
         try:

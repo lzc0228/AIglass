@@ -235,6 +235,68 @@ def preload_all_audio():
             pass
     print(f"[AUDIO] 预加载完成，共加载 {loaded_count} 个音频文件")
 
+def _enqueue_pcm_threadsafe(pcm_data: bytes):
+    """将 PCM 数据推入播放队列（复用同一实时队列策略）"""
+    global _audio_queue, _audio_priority
+
+    if not pcm_data:
+        return
+
+    queue_size = _audio_queue.qsize()
+
+    # 检查是否正在播放
+    with _playing_lock:
+        currently_playing = _is_playing
+
+    # 实时策略：只允许1个积压，超过立即清空
+    if queue_size > 0 and not currently_playing:
+        _audio_queue = queue.PriorityQueue(maxsize=10)
+    elif queue_size > 1 and currently_playing:
+        _audio_queue = queue.PriorityQueue(maxsize=10)
+
+    try:
+        _audio_priority += 1
+        _audio_queue.put_nowait((_audio_priority, pcm_data))
+    except queue.Full:
+        # 队列满则丢弃，保持实时性
+        pass
+
+def _broadcast_audio_optimized_sync(pcm_data: bytes):
+    """在音频工作线程中同步播报：把协程调度到 FastAPI 主事件循环执行。"""
+    global _last_play_ts, _is_playing
+    try:
+        with _playing_lock:
+            _is_playing = True
+
+        now = time.monotonic()
+        idle_sec = now - (_last_play_ts or now)
+        lead_ms = 160 if idle_sec > 3.0 else 60
+        tail_ms = 40
+
+        lead_silence = b"\x00" * (lead_ms * 8000 * 2 // 1000)
+        tail_silence = b"\x00" * (tail_ms * 8000 * 2 // 1000)
+        full_audio = lead_silence + (pcm_data or b"") + tail_silence
+
+        # 调度到 FastAPI 主事件循环（/stream.wav 的 asyncio.Queue 属于主 loop）
+        try:
+            import audio_stream as _as
+            srv_loop = getattr(_as, "server_loop", None)
+        except Exception:
+            srv_loop = None
+
+        if srv_loop is None or (hasattr(srv_loop, "is_running") and not srv_loop.is_running()):
+            return
+
+        fut = asyncio.run_coroutine_threadsafe(broadcast_pcm16_realtime(full_audio), srv_loop)
+        fut.result()
+
+        _last_play_ts = time.monotonic()
+    except Exception as e:
+        print(f"[AUDIO] 广播音频失败: {e}")
+    finally:
+        with _playing_lock:
+            _is_playing = False
+
 def _audio_worker():
     """音频播放工作线程"""
     global _worker_loop
@@ -252,60 +314,22 @@ def _audio_worker():
             print("[AUDIO] 设置音频线程为高优先级")
     except Exception as e:
         print(f"[AUDIO] 设置线程优先级失败: {e}")
-    
-    _worker_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(_worker_loop)
-    
-    async def process_queue():
-        while True:
-            try:
-                # 从优先级队列获取数据
-                priority_data = await asyncio.get_event_loop().run_in_executor(None, _audio_queue.get, True)
-                if priority_data is None:
-                    break
-                # 解包优先级和实际音频数据
-                if isinstance(priority_data, tuple) and len(priority_data) == 2:
-                    _, audio_data = priority_data
-                else:
-                    audio_data = priority_data
-                await _broadcast_audio_optimized(audio_data)
-            except Exception as e:
-                print(f"[AUDIO] 工作线程错误: {e}")
-    
-    _worker_loop.run_until_complete(process_queue())
 
-async def _broadcast_audio_optimized(pcm_data: bytes):
-    """优化的音频广播：单次调用由底层按20ms节拍发送，移除重复节拍和Python层sleep"""
-    global _last_play_ts, _is_playing
-    try:
-        # 设置播放标志
-        with _playing_lock:
-            _is_playing = True
-        # 此时 pcm_data 应该已经是解压后的16位PCM数据了（8kHz）
-        now = time.monotonic()
-        idle_sec = now - (_last_play_ts or now)
-        # 首次或长时间空闲后，预热更长静音；否则小静音
-        lead_ms = 160 if idle_sec > 3.0 else 60
-        tail_ms = 40
+    # 兼容旧逻辑：保留 _worker_loop 变量，但不再在工作线程创建 asyncio loop
+    _worker_loop = None
 
-        lead_silence = b'\x00' * (lead_ms * 8000 * 2 // 1000)  # 8k * 2B
-        tail_silence = b'\x00' * (tail_ms * 8000 * 2 // 1000)
-
-        # 完整音频数据（包含静音）
-        full_audio = lead_silence + pcm_data + tail_silence
-        
-        # 注意：录制在 broadcast_pcm16_realtime 中统一完成，避免重复
-
-        # 单次调用交给底层 pacing（20ms节拍在 broadcast_pcm16_realtime 内部实现）
-        await broadcast_pcm16_realtime(full_audio)
-
-        _last_play_ts = time.monotonic()
-    except Exception as e:
-        print(f"[AUDIO] 广播音频失败: {e}")
-    finally:
-        # 清除播放标志
-        with _playing_lock:
-            _is_playing = False
+    while True:
+        try:
+            priority_data = _audio_queue.get(True)
+            if priority_data is None:
+                break
+            if isinstance(priority_data, tuple) and len(priority_data) == 2:
+                _, audio_data = priority_data
+            else:
+                audio_data = priority_data
+            _broadcast_audio_optimized_sync(audio_data)
+        except Exception as e:
+            print(f"[AUDIO] 工作线程错误: {e}")
 
 def initialize_audio_system():
     """初始化音频系统"""
@@ -376,32 +400,7 @@ def play_audio_threadsafe(audio_key):
                 _output_mode = "local"
                 print(f"[AUDIO] 蓝牙未连接，切换音频输出到本地扬声器")
 
-    # 【优化】实时播报策略：保持队列最小化，避免积压延迟
-    queue_size = _audio_queue.qsize()
-
-    # 检查是否正在播放
-    with _playing_lock:
-        currently_playing = _is_playing
-
-    # 实时策略：只允许1个积压，超过立即清空
-    if queue_size > 0 and not currently_playing:
-        # 未播放时立即清空，播放最新语音
-        print(f"[AUDIO] 清空队列（当前{queue_size}个），播放最新语音")
-        _audio_queue = queue.PriorityQueue(maxsize=10)
-    elif queue_size > 1 and currently_playing:
-        # 正在播放时，如果积压>1个则清空（保持实时性）
-        print(f"[AUDIO] 队列积压({queue_size}个)，清空以保持实时")
-        _audio_queue = queue.PriorityQueue(maxsize=10)
-    try:
-        # 使用优先级队列，确保音频按顺序播放
-        _audio_priority += 1
-        _audio_queue.put_nowait((_audio_priority, pcm_data))
-        if queue_size >= 1:
-            print(f"[AUDIO] 播放队列当前大小: {queue_size + 1}")
-    except queue.Full:
-        # 播放队列满则丢弃，保持实时性
-        print(f"[AUDIO] 队列满，丢弃: {audio_key}")
-        pass
+    _enqueue_pcm_threadsafe(pcm_data)
 
 # 全局语音节流
 _last_voice_time = 0
@@ -468,6 +467,24 @@ def play_voice_text(text: str):
             _last_voice_time = current_time
             return
 
+    # 若映射缺失：尝试直接在 VOICE_DIR 里用「文本同名文件」匹配（不依赖 map.zh-CN.json）
+    try:
+        for ck in candidates:
+            # 允许 voice/xxx.wav 与 voice/xxx.WAV
+            for ext in (".wav", ".WAV"):
+                direct = os.path.join(VOICE_DIR, ck + ext)
+                if os.path.exists(direct):
+                    AUDIO_MAP[ck] = direct
+                    # 确保缓存里有数据（否则 play_audio_threadsafe 会认为未预加载）
+                    load_wav_file(direct)
+                    print(f"[AUDIO] 直接命中文件: '{ck}' -> '{direct}'")
+                    play_audio_threadsafe(ck)
+                    _last_voice_text = text
+                    _last_voice_time = current_time
+                    return
+    except Exception:
+        pass
+
     # 针对"前方有…注意避让"降级
     if ("前方有" in t) and ("注意避让" in t):
         fallback = "前方有障碍物，注意避让。"
@@ -495,7 +512,7 @@ def play_voice_text(text: str):
 
     # ========== TTS 回退（新增）==========
     # 如果没有预录音频，尝试使用 Piper-TTS
-    global _piper_tts, _tts_enabled, _worker_loop
+    global _piper_tts, _tts_enabled
     print(f"[AUDIO] TTS状态: enabled={_tts_enabled}, available={_piper_tts.is_available() if _piper_tts else False}")
     if _tts_enabled and _piper_tts and _piper_tts.is_available():
         try:
@@ -504,12 +521,11 @@ def play_voice_text(text: str):
                 print(f"[AUDIO] 使用 TTS 生成语音: {text}")
                 # 加载并播放生成的音频
                 pcm_data = load_wav_file(wav_path)
-                if pcm_data and _worker_loop:
-                    # 直接播放（不经过队列，保持低延迟）
-                    asyncio.run_coroutine_threadsafe(
-                        _broadcast_audio_optimized(pcm_data),
-                        _worker_loop
-                    )
+                # load_wav_file 可能返回压缩数据；确保入队的是解压后的 PCM16
+                if pcm_data and len(pcm_data) > 5 and pcm_data[0] in [0x01, 0x02]:
+                    pcm_data = compressed_audio_cache.decompress(pcm_data) or b""
+                if pcm_data:
+                    _enqueue_pcm_threadsafe(pcm_data)
                     # 清理临时文件
                     try:
                         os.remove(wav_path)

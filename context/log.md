@@ -1481,3 +1481,140 @@ sudo systemctl enable bluetooth
 2. 摄像头接入后测试：3 秒一次的自动场景播报是否稳定且不刷屏。
 3. 夜间户外测试：触发“天色已晚…”提醒，并验证冷却时间有效。
 4. 蓝牙连接/断开测试：确认 `pactl` 能检测到 bluez sink，并验证“只在耳机出声不外放”的最终链路。
+
+---
+
+# 2026-02-03（语音无声排查 + 语音资源批量生成）
+
+## 现象
+
+- 运行 `app_main.py` 仍然“听不到声音”。
+
+## 根因（核心）
+
+1. **音频广播线程与 FastAPI 主事件循环不一致**
+   - `/stream.wav` 的 client 队列（`asyncio.Queue`）属于 FastAPI 主事件循环；
+   - 之前 `audio_player` 用“工作线程 + 自建 asyncio loop”去 `await broadcast_pcm16_realtime()`，会导致跨事件循环操作队列，实际播放端收不到音频（表现为无声）。
+
+2. **语音资源缺失导致播报文本无法命中**
+   - `play_voice_text("系统已启动")` 等常用文本在 `voice/map.zh-CN.json` 中无映射时会走 TTS；但为了确保稳定，仍需要补齐常用预置音频/映射。
+
+## 已做修改（已落代码）
+
+### 1) 修复音频广播链路（保证 /stream.wav 能收到音频）
+
+- `audio_stream.py`
+  - 新增 `server_loop` + `set_server_loop()/get_server_loop()`，用于跨线程把协程调度到 FastAPI 主事件循环。
+  - `register_stream_route()` 的 `/stream.wav` handler 会记录主 loop。
+  - `broadcast_pcm16_realtime()` 在无客户端时直接返回，避免后台空转 sleep。
+
+- `app_main.py`
+  - 在 `on_startup_init_audio()` 中调用 `audio_stream.set_server_loop(asyncio.get_running_loop())`，确保主 loop 早早就被记录。
+
+- `audio_player.py`
+  - 将音频播放工作线程改为**同步 worker**（不再自建 asyncio loop），从 `_audio_queue` 取 PCM 后用 `asyncio.run_coroutine_threadsafe()` 调度到主 loop 执行广播。
+  - 新增 `_enqueue_pcm_threadsafe()` 统一入队逻辑（文件播报与 TTS 回退共用）。
+
+### 2) 批量生成语音文件（voice/）
+
+- 新增脚本：`scripts/generate_voice_assets.py`
+  - 使用本地 `piper` + `model/piper/zh_CN-huayan-medium.onnx` 离线生成 WAV
+  - 更新 `voice/map.zh-CN.json`（当前已包含一批常用固定提示词）
+- 已生成并补齐多条用户列出的提示词音频（如“保持直行”“过马路结束…”“红灯/绿灯/黄灯”等），不足的可继续用脚本补。
+
+## 如何验证（建议）
+
+1. 用 `openai_glasses` 环境启动服务：
+   - ` /data0/home/scli/conda/envs/openai_glasses/bin/python app_main.py`
+2. **必须有播放端连接**（二选一即可）：
+   - 浏览器/播放器打开：`http://<server_ip>:8000/stream.wav`
+   - 或 ESP32 扬声器端实现并连接 `/stream.wav`
+3. 启动后应能播报“系统已启动”（若播放端已连上）。
+
+## 未解决/需确认
+
+- 如果“已连上 /stream.wav 仍无声”，需要确认：
+  - 播放端是否真的在拉流（网络/URL/端口）
+  - ESP32 侧是否支持 8kHz 单声道 PCM16 WAV 流
+  - 蓝牙/本地输出最终链路选择（服务端仅负责提供 `/stream.wav`，真正出声设备在客户端侧）
+
+---
+
+# 2026-02-03（续：按用户清单补齐语音资源 + 无声问题进一步定位）
+
+## 用户需求（本次对话）
+
+- 用户反馈：运行 `app_main.py` 仍然无声。
+- 用户提出：需要预设大量常用提示词音频（列出了“斑马线已对准…”“保持直行…”“红灯/绿灯/黄灯…”等），希望我把**所有可能需要的声音文件**准备到 `voice/` 目录。
+
+## 关键决策
+
+1. **音频资源准备采用“离线 TTS 批量生成 + 映射表维护”**
+   - 使用本地 `piper` + `model/piper/zh_CN-huayan-medium.onnx` 自动生成 `.wav`（避免手工录音/找素材）。
+   - 统一维护 `voice/map.zh-CN.json`，让 `audio_player._merge_voice_map()` 自动合并到 `AUDIO_MAP`。
+
+2. **降低对映射表的强依赖，增加“文件同名直连”兜底**
+   - 在 `audio_player.play_voice_text()` 中：当 `map.zh-CN.json` 未命中时，尝试直接查找 `voice/<文本>.wav` 或 `voice/<文本>.WAV`，命中后动态加入 `AUDIO_MAP` 并播放。
+
+3. **无声问题优先按“播放链路”而非“缺文件”处理**
+   - 明确该项目默认“出声”依赖客户端拉取 `/stream.wav`；服务端本身不等价于“直接外放”。
+   - 同时修复了跨线程/跨事件循环导致的音频分发失败问题（见上一个章节的“根因/修改”）。
+
+## 重要实现/产出（本次对话新增）
+
+### A) 语音文件批量生成脚本
+
+- 新增：`scripts/generate_voice_assets.py`
+  - 支持生成固定提示词集合，并更新 `voice/map.zh-CN.json`
+  - 推荐用法：`python scripts/generate_voice_assets.py --no-auto-extract`
+  - 说明：第一次误跑“自动抽取”时会把日志/调试字符串也当成文本生成语音，产生大量无意义 `.wav`；后续改用 `--no-auto-extract` 控制范围，并增强了过滤规则（跳过以 `[` 开头、包含大量 `=`、包含 `YOLO/Frame/DEBUG/ERROR` 等的字符串）。
+
+### B) 语音映射/缺失项补齐
+
+- `voice/map.zh-CN.json` 已从最初 3 条扩展到 ~78 条（含你列出的大部分提示词以及导航常用语）。
+- 针对用户清单中容易出现的变体：
+  - 补了 `方向已对正!现在校准位置。`（与 `方向已对正！现在校准位置。` 并存）
+  - 补了 `红灯_原始 / 绿灯_原始 / 黄灯_原始`
+  - 补了 `盲道已接近，开始对准盲道。`
+
+### C) 音频链路修复补充
+
+- `audio_stream.py`
+  - `broadcast_pcm16_realtime()` 增加“无客户端直接返回”，避免后台按 20ms 节拍空转阻塞。
+- `audio_player.py`
+  - 将音频 worker 改为同步线程，不再自建 asyncio loop；通过 `asyncio.run_coroutine_threadsafe()` 调度到 FastAPI 主 loop 执行真正的广播。
+  - TTS 回退路径改为“入队播放”，与预录音频统一机制（避免依赖已移除的 `_worker_loop`）。
+
+## 验证与发现（本次对话）
+
+1. `piper` 可用且能生成 WAV（已在本机生成测试文件成功）。
+2. 使用 `openai_glasses` 环境（`/data0/home/scli/conda/envs/openai_glasses/bin/python`）才能正常 import `fastapi`；用 base python 会缺依赖。
+3. 在“模拟 /stream.wav 连接”的本地测试里，已经能看到队列收到音频分片（说明链路从服务端到队列可通）。
+
+## 假设（默认成立）
+
+1. 播放端会拉取 `http://<server_ip>:8000/stream.wav` 并能播放 WAV 流（浏览器/VLC/ffplay/ESP32 播放器均可）。
+2. 目标设备支持 8kHz/mono/PCM16（项目当前下行参数）。
+3. `piper` 与模型文件路径正确（本机为 `model/piper/zh_CN-huayan-medium.onnx`）。
+
+## 未解决问题 / 风险
+
+1. **如果没有任何客户端拉 `/stream.wav`，服务端不会“自己出声”**  
+   - 这属于架构设计：服务端仅产出音频流，播放发生在客户端/ESP32/Jetson 播放器一侧。
+
+2. **`voice/` 目录存在大量历史/误生成的无意义 `.wav`（日志句子）**
+   - 不影响功能（`map.zh-CN.json` 已主要指向常用短句），但会污染目录；建议后续清理。
+
+3. **个别运行时可能仍打印 `[AUDIO] 广播音频失败:`（空异常字符串）**
+   - 可能与 loop 关闭/取消时机有关，需要在真实 `uvicorn` 运行 + 实际客户端拉流场景复现确认。
+
+## 下一步行动（建议顺序）
+
+1. 用 `openai_glasses` 环境启动：`/data0/home/scli/conda/envs/openai_glasses/bin/python app_main.py`
+2. 立刻用浏览器/VLC 打开 `http://<server_ip>:8000/stream.wav`（确认播放端真的在拉流）
+3. 启动后应能听到“系统已启动”；若仍无声：
+   - 确认 `/stream.wav` 有数据（VLC/ffplay 是否有音频波形/时间推进）
+   - 确认端口/防火墙/同网段
+   - 确认播放端设备的音频输出（耳机/扬声器）
+4. 若要进一步补齐提示词：把新增短句追加到 `scripts/generate_voice_assets.py` 的 seed 列表，然后运行 `python scripts/generate_voice_assets.py --no-auto-extract`
+5. （可选）清理 `voice/` 中未被 `map.zh-CN.json` 引用的“日志类 wav”文件，并保持目录整洁

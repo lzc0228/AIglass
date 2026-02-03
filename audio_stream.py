@@ -6,6 +6,17 @@ from typing import Optional, Set, List, Tuple, Any, Dict
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 
+# ===== 主事件循环引用（用于跨线程调度播报到正确的 loop）=====
+server_loop: Optional[asyncio.AbstractEventLoop] = None
+
+def set_server_loop(loop: asyncio.AbstractEventLoop):
+    """记录 FastAPI/uvicorn 所在的主事件循环，供其他线程安全调度协程。"""
+    global server_loop
+    server_loop = loop
+
+def get_server_loop() -> Optional[asyncio.AbstractEventLoop]:
+    return server_loop
+
 # ===== 下行 WAV 流基础参数 =====
 STREAM_SR = 8000  # 改为8kHz，ESP32支持
 STREAM_CH = 1
@@ -78,6 +89,9 @@ async def hard_reset_audio(reason: str = ""):
 
 async def broadcast_pcm16_realtime(pcm16: bytes):
     """以 20ms 节拍把 pcm16 发送给所有仍存活的连接；队列满丢尾，保持实时。"""
+    # 无客户端时直接返回，避免在后台白白按节拍 sleep
+    if not stream_clients:
+        return
     # 【已禁用】录制音频（在分发之前整体录制，避免分片）- 已注释以减少数据传输占用
     # try:
     #     import sync_recorder
@@ -120,6 +134,12 @@ async def broadcast_pcm16_realtime(pcm16: bytes):
 def register_stream_route(app):
     @app.get("/stream.wav")
     async def stream_wav(_: Request):
+        # 记录主 loop（/stream.wav 与所有 ws/HTTP 处理共享同一事件循环）
+        try:
+            set_server_loop(asyncio.get_running_loop())
+        except Exception:
+            pass
+
         # —— 强制单连接（或少数连接），先拉闸所有旧连接 ——
         for sc in list(stream_clients):
             try: sc.abort_event.set()
