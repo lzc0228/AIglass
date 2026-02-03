@@ -19,12 +19,14 @@ hand_landmarker.task
 
 # Audio/Video recordings and downloads
 recordings/
-voice/
 music/
 music_downloads/
+# voice/ 目录下的有效语音文件需要版本控制，使用 .gitignore_patterns 排除日志类文件
 *.wav
 *.mp3
 *.mp4
+!voice/**/*.wav
+!voice/**/*.WAV
 
 # Static assets
 static/

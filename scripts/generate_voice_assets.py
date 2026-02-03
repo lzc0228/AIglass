@@ -34,6 +34,10 @@ KEYWORDS = [
     "对准", "校准", "保持直行", "直行", "继续", "开始", "结束", "等待",
     "障碍物", "避让", "注意", "安全",
     "丢失", "搜索", "靠近",
+    "颜色", "文字", "公交", "朋友", "人脸", "灯", "夜间", "盲人",
+    "音乐", "点歌", "播放", "暂停", "继续播放",
+    "识别", "汉字", "路线", "路",
+    "物品", "寻找", "找",
 ]
 
 # Short UI-only keys that shouldn't be synthesized
@@ -121,7 +125,46 @@ def _collect_strings_from_py(path: Path) -> Set[str]:
     return out
 
 
-def _default_seed_phrases() -> Set[str]:
+def _load_literal_dict(path: Path, var_name: str) -> dict:
+    try:
+        src = path.read_text(encoding="utf-8")
+        tree = ast.parse(src, filename=str(path))
+    except Exception:
+        return {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        for t in targets:
+            if isinstance(t, ast.Name) and t.id == var_name:
+                try:
+                    return ast.literal_eval(node.value)
+                except Exception:
+                    return {}
+    return {}
+
+
+def _load_local_items(repo_root: Path) -> Set[str]:
+    data = _load_literal_dict(repo_root / "qwen_extractor.py", "LOCAL_CN2EN")
+    if isinstance(data, dict):
+        return set(data.keys())
+    return set()
+
+
+def _load_color_names(repo_root: Path) -> Set[str]:
+    data = _load_literal_dict(repo_root / "color_recognition.py", "COLOR_NAMES_ZH")
+    names = set()
+    if isinstance(data, dict):
+        names |= set(data.values())
+    # 合并/特殊色名
+    names |= {"蓝绿色", "紫红色", "未知"}
+    return names
+
+
+def _default_seed_phrases(repo_root: Path) -> Set[str]:
     # User-requested + common system prompts
     phrases = {
         "系统已启动",
@@ -202,6 +245,111 @@ def _default_seed_phrases() -> Set[str]:
         phrases.add(f"远处发现斑马线,{pos}")
         phrases.add(f"正在靠近斑马线,{pos}")
         phrases.add(f"接近斑马线,{pos}")
+
+    # ===== 任务覆盖：方向/引导/物品搜索 =====
+    phrases |= {
+        "向左", "向右", "向上", "向下", "向前", "向后", "向中",
+        "向前靠近", "向后一点", "保持这个距离", "很好，保持", "再调整一下",
+        "请向左移动一下镜头", "请向右移动一下镜头", "请向中移动一下镜头",
+        "请缓慢靠近", "保持", "已居中", "OK", "检测到物体",
+    }
+
+    # ===== 任务覆盖：颜色识别 =====
+    for cname in sorted(_load_color_names(repo_root)):
+        phrases.add(f"我看到主要是：{cname}。")
+        phrases.add(f"可能是：{cname}。你可以把镜头再对准一点。")
+        phrases.add(f"颜色不太确定，可能是：{cname}。")
+    phrases.add("无法识别颜色，请确保画面有足够光线。")
+
+    # ===== 任务覆盖：OCR/汉字识别 =====
+    phrases.add("我读到：")
+    phrases.add("没有识别到清晰的文字。")
+
+    # ===== 任务覆盖：公交线路识别 =====
+    phrases.add("没有识别到清晰的路线号。请确保画面包含公交车头或路线牌。")
+    bus_max = int(os.getenv("AIGLASS_BUS_ROUTE_MAX", "120"))
+    for n in range(1, bus_max + 1):
+        phrases.add(f"这辆车可能是：{n}路。")
+        phrases.add(f"可能是：{n}路。你可以把镜头对准路线牌。")
+
+    # ===== 任务覆盖：朋友/人脸识别 =====
+    sample_names = ["张三", "李四", "王五"]
+    for name in sample_names:
+        phrases.add(f"已记住：{name}。")
+        phrases.add(f"已记住：{name}，男，30岁。")
+        phrases.add(f"我觉得是 {name}。")
+        phrases.add(f"我觉得是 {name}，男，30岁。")
+        phrases.add(f"已忘记：{name}。")
+        phrases.add(f"我还没记住 {name}。")
+    phrases |= {
+        "没有画面，无法录入。",
+        "没有画面，无法识别。",
+        "请告诉我要记住的名字，比如：这是张三。",
+        "请告诉我要删除的名字，比如：忘记张三。",
+        "没有检测到清晰的人脸，请把人脸对准镜头再试。",
+        "录入完成，但训练失败（样本不足或损坏）。",
+        "我还没有录入任何朋友。你可以说：这是张三。",
+        "我看到有人，但还不认识。你可以说：这是某某。",
+        "我可能认识这个人，但档案缺失。你可以重新录入。",
+        "我认识：张三。",
+    }
+
+    # ===== 任务覆盖：夜间提示/盲人提示 =====
+    phrases |= {
+        "我是盲人，请注意。",
+        "请注意前方盲人。",
+        "已进入夜间模式。",
+        "已进入日间模式。",
+    }
+
+    # ===== 任务覆盖：灯光关闭提醒 =====
+    phrases |= {
+        "我检测到灯可能还开着，记得关灯。",
+        "我感觉灯可能还开着，建议检查并关闭。",
+        "环境比较暗，看起来灯应该关了。",
+        "看起来灯已经关了。",
+        "好的，我会帮你留意灯是否忘关。",
+        "好的，已关闭关灯提醒。",
+        "没有画面，无法检查灯光。",
+    }
+
+    # ===== 任务覆盖：点歌/音乐 =====
+    phrases |= {
+        "正在搜索音乐，请稍候...",
+        "抱歉，没有找到相关歌曲。请换个关键词试试。",
+        "请告诉我你想听什么歌，比如：我想听周杰伦的稻香。",
+        "已暂停播放",
+        "继续播放",
+        "播放列表为空，请先搜索歌曲。",
+        "正在播放：周杰伦的稻香",
+    }
+
+    # ===== 任务覆盖：物品/食物搜索 =====
+    items = set(_load_local_items(repo_root))
+    items |= {
+        "苹果", "香蕉", "面包", "牛奶", "矿泉水", "水杯",
+        "可乐", "雪碧", "红牛", "AD钙奶", "饼干", "巧克力",
+        "钥匙", "钱包", "手机", "眼镜", "遥控器",
+    }
+    for item in sorted(items):
+        phrases.add(f"现在开始找：{item}")
+        phrases.add(f"我没找到{item}，请把镜头换个角度或走近一点。")
+        phrases.add(f"找到{item}了！")
+
+    # ===== 任务覆盖：头部高度障碍 =====
+    phrases |= {
+        "注意头部高度有障碍。",
+        "注意头顶有障碍物。",
+        "[导航] 注意头部高度有障碍。",
+    }
+
+    # ===== 任务覆盖：及时避障（通用） =====
+    phrases |= {
+        "前方近距离有障碍物，请停下。",
+        "前方有障碍物靠近，请注意。",
+        "前方远处有障碍物。",
+    }
+
     return phrases
 
 
@@ -234,7 +382,7 @@ def main(argv: list[str] | None = None) -> int:
     voice_dir = (repo_root / args.voice_dir).resolve()
     map_path = (repo_root / args.map).resolve()
 
-    phrases: Set[str] = set(_default_seed_phrases())
+    phrases: Set[str] = set(_default_seed_phrases(repo_root))
 
     if not args.no_auto_extract:
         for rel in [
