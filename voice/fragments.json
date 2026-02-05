@@ -1,0 +1,181 @@
+{
+  "direction": {
+    "clock": {
+      "1": "1点方向",
+      "2": "2点方向",
+      "3": "3点方向",
+      "4": "4点方向",
+      "5": "5点方向",
+      "6": "6点方向",
+      "7": "7点方向",
+      "8": "8点方向",
+      "9": "9点方向",
+      "10": "10点方向",
+      "11": "11点方向",
+      "12": "12点方向"
+    },
+    "lr": {
+      "left": "左侧",
+      "center": "前方",
+      "right": "右侧"
+    },
+    "combined": {
+      "left_front": "左前方",
+      "right_front": "右前方",
+      "left_back": "左后方",
+      "right_back": "右后方"
+    }
+  },
+  "distance": {
+    "meters": {
+      "1": "1米",
+      "2": "2米",
+      "3": "3米",
+      "4": "4米",
+      "5": "5米",
+      "6": "6米",
+      "7": "7米",
+      "8": "8米",
+      "9": "9米",
+      "10": "10米"
+    },
+    "steps": {
+      "1": "一步",
+      "2": "两步",
+      "3": "三步",
+      "4": "四步",
+      "5": "五步",
+      "6": "六步",
+      "7": "七步",
+      "8": "八步",
+      "9": "九步",
+      "10": "十步"
+    },
+    "fuzzy": {
+      "near": "近距离",
+      "far": "远距离",
+      "very_near": "就在眼前",
+      "very_far": "较远处"
+    }
+  },
+  "objects": {
+    "people": {
+      "person": "人",
+      "people": "人",
+      "child": "小孩",
+      "elderly": "老人",
+      "doctor": "医生",
+      "nurse": "护士",
+      "worker": "工作人员",
+      "security": "安保",
+      "student": "学生"
+    },
+    "traffic": {
+      "car": "汽车",
+      "bus": "公交车",
+      "truck": "卡车",
+      "bicycle": "自行车",
+      "motorcycle": "摩托车",
+      "scooter": "电动车",
+      "taxi": "出租车"
+    },
+    "fixed": {
+      "pole": "杆子",
+      "post": "柱子",
+      "column": "柱子",
+      "pillar": "柱子",
+      "bollard": "路桩",
+      "bench": "长椅",
+      "tree": "树",
+      "hydrant": "消防栓",
+      "sign": "指示牌"
+    },
+    "indoor": {
+      "door": "门",
+      "window": "窗户",
+      "stairs": "楼梯",
+      "handrail": "扶手",
+      "elevator": "电梯",
+      "escalator": "扶梯",
+      "chair": "椅子",
+      "table": "桌子",
+      "counter": "柜台",
+      "atm": "取款机",
+      "turnstile": "闸机",
+      "ticket machine": "售票机"
+    },
+    "facilities": {
+      "shelf": "货架",
+      "cart": "购物车",
+      "shopping cart": "购物车",
+      "checkout": "收银台",
+      "bed": "病床",
+      "wheelchair": "轮椅",
+      "stretcher": "担架"
+    },
+    "hazard": {
+      "cone": "锥桶",
+      "barrier": "路障",
+      "fence": "围栏",
+      "hole": "坑洞",
+      "wet floor": "湿滑地面",
+      "glass door": "玻璃门"
+    },
+    "nature": {
+      "grass": "草地",
+      "lawn": "草坪",
+      "flower": "花坛",
+      "pond": "水池",
+      "fountain": "喷泉"
+    }
+  },
+  "actions": {
+    "stop": "先停一下",
+    "avoid_left": "从右侧绕开",
+    "avoid_right": "从左侧绕开",
+    "continue": "保持直行",
+    "slow": "减速慢行",
+    "turn_left": "向左转一点",
+    "turn_right": "向右转一点",
+    "careful": "请注意",
+    "watch_step": "注意脚下",
+    "watch_head": "小心头顶"
+  },
+  "urgency": {
+    "high": "紧急",
+    "danger": "危险",
+    "warning": "注意",
+    "caution": "小心"
+  },
+  "scenes": {
+    "street": "街道环境",
+    "sidewalk": "人行道上",
+    "crossroad": "十字路口",
+    "crosswalk": "斑马线",
+    "traffic_light": "红绿灯前",
+    "bus_stop": "公交车站",
+    "subway": "地铁站",
+    "hospital": "医院环境",
+    "supermarket": "超市通道",
+    "mall": "商场内",
+    "office": "办公楼",
+    "school": "学校",
+    "bank": "银行",
+    "restaurant": "餐厅",
+    "elevator": "电梯里",
+    "stairs": "楼梯上",
+    "corridor": "走廊",
+    "lobby": "大厅",
+    "room": "房间内",
+    "restroom": "卫生间",
+    "park": "公园里",
+    "square": "广场上",
+    "construction": "施工区域",
+    "underpass": "地下通道",
+    "bridge": "天桥上",
+    "parking": "停车场",
+    "indoor": "室内环境",
+    "outdoor": "户外环境",
+    "unknown": ""
+  }
+}

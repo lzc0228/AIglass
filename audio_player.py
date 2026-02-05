@@ -8,6 +8,7 @@ import asyncio
 import threading
 import queue
 import time
+import hashlib
 from audio_stream import broadcast_pcm16_realtime
 from audio_compressor import compressed_audio_cache, AudioCompressor
 
@@ -44,13 +45,14 @@ def _init_audio_output():
             print(f"[AUDIO] 蓝牙初始化失败: {e}")
 
     # 初始化 TTS
-    _tts_enabled = os.getenv("AIGLASS_TTS_ENABLED", "0") == "1"
+    _tts_enabled = os.getenv("AIGLASS_TTS_ENABLED", "1") == "1"
     if _tts_enabled:
         try:
             from piper_tts import get_piper_tts
             _piper_tts = get_piper_tts()
             if _piper_tts.is_available():
                 print("[AUDIO] Piper-TTS 已启用")
+                _pre_generate_voice_corpus()
             else:
                 print("[AUDIO] Piper-TTS 不可用，将仅使用预录音频")
         except ImportError:
@@ -96,6 +98,9 @@ VOICE_DIR = _resolve_path(os.getenv("VOICE_DIR", os.path.join(_BASE_DIR, "voice"
 VOICE_MAP_FILE = _resolve_path(
     os.getenv("AIGLASS_VOICE_MAP_FILE") or os.getenv("VOICE_MAP_FILE") or os.path.join(VOICE_DIR, "map.zh-CN.json")
 )
+VOICE_GEN_DIR = _resolve_path(os.getenv("AIGLASS_VOICE_GEN_DIR", os.path.join(VOICE_DIR, "generated")))
+VOICE_GEN_MAP_FILE = _resolve_path(os.getenv("AIGLASS_VOICE_GEN_MAP_FILE", os.path.join(VOICE_DIR, "map.generated.json")))
+_voice_map_lock = threading.Lock()
 
 # 音频文件映射（将合并 voice 映射）
 AUDIO_MAP = {
@@ -177,7 +182,9 @@ def _merge_voice_map():
         # 兼容：map 文件可放在 VOICE_DIR、AIGLASS_AUDIO_DIR 或由环境变量直接指定
         map_candidates = [
             VOICE_MAP_FILE,
+            VOICE_GEN_MAP_FILE,
             os.path.join(VOICE_DIR, "map.zh-CN.json"),
+            os.path.join(VOICE_DIR, "map.generated.json"),
             os.path.join(AUDIO_BASE_DIR, "map.zh-CN.json"),
             os.path.join(_BASE_DIR, "voice", "map.zh-CN.json"),
         ]
@@ -235,6 +242,179 @@ def preload_all_audio():
             pass
     print(f"[AUDIO] 预加载完成，共加载 {loaded_count} 个音频文件")
 
+
+def _ensure_pcm_data(pcm_data: bytes) -> bytes:
+    if not pcm_data:
+        return b""
+    if len(pcm_data) > 5 and pcm_data[0] in [0x01, 0x02]:
+        return compressed_audio_cache.decompress(pcm_data) or b""
+    return pcm_data
+
+
+def _candidate_texts(text: str) -> list:
+    t = (text or "").strip()
+    if not t:
+        return []
+    candidates = [t]
+    if t[-1:] not in ("。", "！", "!", "？", "?", "."):
+        candidates.append(t + "。")
+    else:
+        t2 = t.rstrip("。.!！?？")
+        if t2 and t2 != t:
+            candidates.append(t2)
+    # 去重保持顺序
+    seen = set()
+    out = []
+    for c in candidates:
+        if c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def _find_audio_path_for_text(text: str) -> tuple:
+    """返回 (key, filepath) 或 (None, None)"""
+    for ck in _candidate_texts(text):
+        if ck in AUDIO_MAP:
+            path = AUDIO_MAP.get(ck)
+            if path and os.path.exists(path):
+                return ck, path
+    # 直接匹配 VOICE_DIR 同名文件
+    for ck in _candidate_texts(text):
+        for ext in (".wav", ".WAV"):
+            direct = os.path.join(VOICE_DIR, ck + ext)
+            if os.path.exists(direct):
+                AUDIO_MAP[ck] = direct
+                return ck, direct
+    return None, None
+
+
+def _write_wav(path: str, pcm_data: bytes, sr: int = 8000):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with wave.open(path, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(pcm_data)
+
+
+def _update_voice_map_file(text: str, audio_path: str):
+    if not text or not audio_path:
+        return
+    # 生成相对路径，避免环境路径变化
+    rel_path = audio_path
+    try:
+        if os.path.commonpath([VOICE_DIR, audio_path]) == VOICE_DIR:
+            rel_path = os.path.relpath(audio_path, VOICE_DIR)
+    except Exception:
+        pass
+
+    with _voice_map_lock:
+        data = {}
+        if os.path.exists(VOICE_GEN_MAP_FILE):
+            try:
+                with open(VOICE_GEN_MAP_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+            except Exception:
+                data = {}
+        data[text] = {"files": [rel_path]}
+        tmp = VOICE_GEN_MAP_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, VOICE_GEN_MAP_FILE)
+
+
+def _save_generated_audio(text: str, pcm_data: bytes):
+    if not text or not pcm_data:
+        return None
+    if os.getenv("AIGLASS_VOICE_SAVE_TTS", "1") != "1":
+        return None
+    h = hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+    fname = f"tts_{h}.wav"
+    path = os.path.join(VOICE_GEN_DIR, fname)
+    if not os.path.exists(path):
+        _write_wav(path, pcm_data)
+    AUDIO_MAP[text] = path
+    _update_voice_map_file(text, path)
+    return path
+
+
+def _get_pcm_for_text(text: str, allow_tts: bool = True, save_generated: bool = True) -> bytes:
+    key, path = _find_audio_path_for_text(text)
+    if path:
+        pcm = _ensure_pcm_data(load_wav_file(path))
+        return pcm or b""
+
+    # 允许 TTS 回退
+    if allow_tts and _tts_enabled and _piper_tts and _piper_tts.is_available():
+        pcm = _piper_tts.text_to_audio(text)
+        if pcm:
+            if save_generated:
+                _save_generated_audio(text, pcm)
+            return pcm
+    return b""
+
+
+def _pre_generate_voice_corpus():
+    """预生成常用片段到本地语料库（可选）"""
+    if not (_tts_enabled and _piper_tts and _piper_tts.is_available()):
+        return
+    if os.getenv("AIGLASS_TTS_PREGEN", "0") != "1":
+        return
+
+    fragments_path = os.getenv("AIGLASS_VOICE_FRAGMENTS", os.path.join(VOICE_DIR, "fragments.json"))
+    try:
+        with open(fragments_path, "r", encoding="utf-8") as f:
+            fragments = json.load(f) or {}
+    except Exception:
+        fragments = {}
+
+    items = []
+    # 方向
+    for v in (fragments.get("direction") or {}).get("clock", {}).values():
+        items.append(str(v))
+    for v in (fragments.get("direction") or {}).get("lr", {}).values():
+        items.append(str(v))
+    for v in (fragments.get("direction") or {}).get("combined", {}).values():
+        items.append(str(v))
+    # 距离
+    for v in (fragments.get("distance") or {}).get("meters", {}).values():
+        items.append(str(v))
+    for v in (fragments.get("distance") or {}).get("steps", {}).values():
+        items.append("约" + str(v) if not str(v).startswith("约") else str(v))
+    # 场景
+    for v in (fragments.get("scenes") or {}).values():
+        if v:
+            items.append(str(v))
+    # 动作与告警
+    for v in (fragments.get("actions") or {}).values():
+        items.append(str(v))
+    for v in (fragments.get("urgency") or {}).values():
+        items.append(str(v))
+    # 物体
+    for group in (fragments.get("objects") or {}).values():
+        if isinstance(group, dict):
+            for v in group.values():
+                items.append(str(v))
+
+    # 去重 & 限制
+    seen = set()
+    uniq = []
+    for it in items:
+        it = (it or "").strip()
+        if not it or it in seen:
+            continue
+        seen.add(it)
+        uniq.append(it)
+
+    max_items = int(os.getenv("AIGLASS_TTS_PREGEN_MAX", "200"))
+    for it in uniq[:max_items]:
+        if _find_audio_path_for_text(it)[1]:
+            continue
+        pcm = _piper_tts.text_to_audio(it)
+        if pcm:
+            _save_generated_audio(it, pcm)
+
 def _enqueue_pcm_threadsafe(pcm_data: bytes):
     """将 PCM 数据推入播放队列（复用同一实时队列策略）"""
     global _audio_queue, _audio_priority
@@ -270,8 +450,10 @@ def _broadcast_audio_optimized_sync(pcm_data: bytes):
 
         now = time.monotonic()
         idle_sec = now - (_last_play_ts or now)
-        lead_ms = 160 if idle_sec > 3.0 else 60
-        tail_ms = 40
+        lead_short = int(os.getenv("AIGLASS_LEAD_SILENCE_MS", "40"))
+        lead_long = int(os.getenv("AIGLASS_LEAD_SILENCE_LONG_MS", str(max(lead_short, lead_short * 2))))
+        tail_ms = int(os.getenv("AIGLASS_TAIL_SILENCE_MS", "40"))
+        lead_ms = lead_long if idle_sec > 3.0 else lead_short
 
         lead_silence = b"\x00" * (lead_ms * 8000 * 2 // 1000)
         tail_silence = b"\x00" * (tail_ms * 8000 * 2 // 1000)
@@ -441,104 +623,131 @@ def play_voice_text(text: str):
         print(f"[AUDIO] 节流跳过: {text} (距离上次 {current_time - _last_voice_time:.2f}秒)")
         return  # 静默跳过
 
-    candidates = []
-    t = text.strip()
-    candidates.append(t)
-    # 尝试补全句号
-    if t[-1:] not in ("。", "！", "!", "？", "?", "."):
-        candidates.append(t + "。")
-    else:
-        # 尝试去掉标点
-        t2 = t.rstrip("。.!！?？")
-        if t2 and t2 != t:
-            candidates.append(t2)
+    pcm_data = _get_pcm_for_text(text, allow_tts=True, save_generated=True)
+    if not pcm_data:
+        # 针对"前方有…注意避让"降级
+        t = (text or "").strip()
+        if ("前方有" in t) and ("注意避让" in t):
+            fallback = "前方有障碍物，注意避让。"
+            pcm_data = _get_pcm_for_text(fallback, allow_tts=True, save_generated=True)
 
-    # 逐一尝试匹配
-    for ck in candidates:
-        if ck in AUDIO_MAP:
-            audio_file = AUDIO_MAP[ck]
-            print(f"[AUDIO] 找到映射: '{ck}' -> '{audio_file}'")
-            if os.path.exists(audio_file):
-                print(f"[AUDIO] 音频文件存在，开始播放")
-            else:
-                print(f"[AUDIO] 警告: 音频文件不存在: {audio_file}")
-            play_audio_threadsafe(ck)
-            _last_voice_text = text
-            _last_voice_time = current_time
-            return
-
-    # 若映射缺失：尝试直接在 VOICE_DIR 里用「文本同名文件」匹配（不依赖 map.zh-CN.json）
-    try:
-        for ck in candidates:
-            # 允许 voice/xxx.wav 与 voice/xxx.WAV
-            for ext in (".wav", ".WAV"):
-                direct = os.path.join(VOICE_DIR, ck + ext)
-                if os.path.exists(direct):
-                    AUDIO_MAP[ck] = direct
-                    # 确保缓存里有数据（否则 play_audio_threadsafe 会认为未预加载）
-                    load_wav_file(direct)
-                    print(f"[AUDIO] 直接命中文件: '{ck}' -> '{direct}'")
-                    play_audio_threadsafe(ck)
-                    _last_voice_text = text
-                    _last_voice_time = current_time
-                    return
-    except Exception:
-        pass
-
-    # 针对"前方有…注意避让"降级
-    if ("前方有" in t) and ("注意避让" in t):
-        fallback = "前方有障碍物，注意避让。"
-        if fallback in AUDIO_MAP:
-            print(f"[AUDIO] 降级使用: {fallback}")
-            play_audio_threadsafe(fallback)
-            _last_voice_text = text
-            _last_voice_time = current_time
-            return
-
-    # 针对"请向…平移/微调/转动"类词条，常见变体尝试
-    base = t.rstrip("。.!！?？")
-    if base in AUDIO_MAP:
-        print(f"[AUDIO] 找到基础映射: '{base}'")
-        play_audio_threadsafe(base)
+    if pcm_data:
+        _enqueue_pcm_threadsafe(pcm_data)
         _last_voice_text = text
         _last_voice_time = current_time
         return
-    if base + "。" in AUDIO_MAP:
-        print(f"[AUDIO] 找到带句号映射: '{base}。'")
-        play_audio_threadsafe(base + "。")
-        _last_voice_text = text
-        _last_voice_time = current_time
-        return
-
-    # ========== TTS 回退（新增）==========
-    # 如果没有预录音频，尝试使用 Piper-TTS
-    global _piper_tts, _tts_enabled
-    print(f"[AUDIO] TTS状态: enabled={_tts_enabled}, available={_piper_tts.is_available() if _piper_tts else False}")
-    if _tts_enabled and _piper_tts and _piper_tts.is_available():
-        try:
-            wav_path = _piper_tts.text_to_file(text)
-            if wav_path and os.path.exists(wav_path):
-                print(f"[AUDIO] 使用 TTS 生成语音: {text}")
-                # 加载并播放生成的音频
-                pcm_data = load_wav_file(wav_path)
-                # load_wav_file 可能返回压缩数据；确保入队的是解压后的 PCM16
-                if pcm_data and len(pcm_data) > 5 and pcm_data[0] in [0x01, 0x02]:
-                    pcm_data = compressed_audio_cache.decompress(pcm_data) or b""
-                if pcm_data:
-                    _enqueue_pcm_threadsafe(pcm_data)
-                    # 清理临时文件
-                    try:
-                        os.remove(wav_path)
-                    except Exception:
-                        pass
-                    _last_voice_text = text
-                    _last_voice_time = current_time
-                    return
-        except Exception as e:
-            print(f"[AUDIO] TTS 生成失败: {e}")
 
     # 未匹配则输出日志（便于调试）
-    print(f"[AUDIO] 未找到匹配语音: {text}, 候选: {candidates}")
+    print(f"[AUDIO] 未找到匹配语音: {text}")
 
 # 兼容旧接口
 play_audio_on_esp32 = play_audio_threadsafe
+
+
+def play_structured_voice(payload: dict) -> bool:
+    """
+    结构化语音播报：
+    - 优先用片段拼接（scene + direction + distance + object + action）
+    - 片段缺失则走 TTS 并缓存到语料库
+    """
+    global _last_voice_time, _last_voice_text
+
+    if not isinstance(payload, dict):
+        return False
+    if int(payload.get("schema_version", 0) or 0) < 2:
+        return False
+
+    if not _initialized:
+        initialize_audio_system()
+
+    text_full = (payload.get("text") or "").strip()
+    current_time = time.time()
+    if text_full and text_full == _last_voice_text and current_time - _last_voice_time < _voice_cooldown:
+        return True
+
+    if os.getenv("AIGLASS_STRUCTURED_FRAGMENT_SPEAK", "1") != "1":
+        if text_full:
+            play_voice_text(text_full)
+            return True
+        return False
+
+    objs = payload.get("objects") or []
+    if not objs:
+        return False
+
+    obj = objs[0] or {}
+    direction = obj.get("direction") or {}
+    distance = obj.get("distance") or {}
+    scene_zh = (payload.get("scene_zh") or "").strip()
+
+    parts = []
+    urgency = str(obj.get("urgency") or "").upper()
+    if urgency == "HIGH":
+        parts.append("紧急")
+    elif urgency == "MEDIUM":
+        parts.append("注意")
+
+    if scene_zh:
+        parts.append(scene_zh)
+
+    fmt = os.getenv("AIGLASS_DIRECTION_FORMAT", "clock").lower()
+    clock = direction.get("clock")
+    lr_zh = direction.get("lr_zh") or direction.get("lr") or ""
+    if fmt == "lr":
+        if lr_zh:
+            parts.append(str(lr_zh))
+    elif fmt == "both":
+        if clock:
+            parts.append(f"{clock}点方向")
+        if lr_zh:
+            parts.append(str(lr_zh))
+    else:
+        if clock:
+            parts.append(f"{clock}点方向")
+
+    use_steps = os.getenv("AIGLASS_DISTANCE_FORMAT", "steps").lower() == "steps"
+    if use_steps:
+        steps = distance.get("steps") or obj.get("distance_steps")
+        if steps:
+            parts.append(f"约{int(steps)}步")
+    else:
+        meters = distance.get("meters") or obj.get("distance_m")
+        if meters is not None:
+            m = float(meters)
+            parts.append(f"{m:.0f}米" if m >= 1.0 else f"{m:.1f}米")
+
+    name_zh = obj.get("name_zh") or obj.get("name") or ""
+    if name_zh:
+        parts.append(str(name_zh))
+
+    action = (obj.get("action") or obj.get("avoidance_action") or "").strip()
+    if action:
+        parts.append(action.rstrip("。"))
+
+    # 片段拼接播放
+    gap_ms = int(os.getenv("AIGLASS_FRAGMENT_GAP_MS", "40"))
+    gap = b"\x00" * (gap_ms * 8000 * 2 // 1000)
+    pcm_chunks = []
+    for p in parts:
+        p = (p or "").strip()
+        if not p:
+            continue
+        pcm = _get_pcm_for_text(p, allow_tts=True, save_generated=True)
+        if not pcm:
+            pcm_chunks = []
+            break
+        pcm_chunks.append(pcm)
+
+    if pcm_chunks:
+        pcm = gap.join(pcm_chunks)
+        _enqueue_pcm_threadsafe(pcm)
+        if text_full:
+            _last_voice_text = text_full
+            _last_voice_time = current_time
+        return True
+
+    # 片段失败则回退全文
+    if text_full:
+        play_voice_text(text_full)
+        return True
+    return False

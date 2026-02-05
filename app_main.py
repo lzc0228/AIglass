@@ -86,7 +86,7 @@ from asr_core import (
     set_current_recognition,
     stop_current_recognition,
 )
-from audio_player import initialize_audio_system, play_voice_text
+from audio_player import initialize_audio_system, play_voice_text, play_structured_voice
 from event_logger import get_event_logger
 
 # ---- 新功能模块 ----
@@ -1014,7 +1014,8 @@ async def start_ai_with_text_custom(user_text: str):
             #     pass
             msg = out.get("text") or "我暂时无法生成描述。"
             await ui_broadcast_final(f"[导航] {msg}")
-            play_voice_text(msg)
+            if not play_structured_voice(out):
+                play_voice_text(msg)
         except Exception as e:
             await ui_broadcast_final(f"[AI] 场景描述失败: {e}")
         return
@@ -1712,9 +1713,12 @@ async def ws_camera_esp(ws: WebSocket):
                             #         event_logger.log({"type": "semantic_auto", "state": st, "payload": out})
                             # except Exception:
                             #     pass
-                            if out.get("should_speak", False) and out.get("text"):
-                                play_voice_text(out["text"])
-                                await ui_broadcast_final(f"[导航] {out['text']}")
+                            if out.get("should_speak", False):
+                                if not play_structured_voice(out):
+                                    if out.get("text"):
+                                        play_voice_text(out["text"])
+                                if out.get("text"):
+                                    await ui_broadcast_final(f"[导航] {out['text']}")
                             last_semantic_emit_ts = now_ts
                     except Exception as e:
                         if frame_counter % 200 == 0:
@@ -2011,17 +2015,22 @@ def _check_if_outdoor(bgr_image: np.ndarray) -> bool:
 def _detect_scene(bgr_image: np.ndarray) -> Tuple[str, float]:
     """
     检测当前场景，返回 (scene_type, confidence)
-    scene_type: blindpath / crosswalk / obstacle / traffic_light_red / traffic_light_green / traffic_light_yellow / unknown
+
+    支持的场景类型：
+    - 导航场景：blindpath / crosswalk / obstacle / traffic_light_*
+    - 建筑场景：hospital / supermarket / mall / restaurant / bank / office
+    - 室内场景：elevator / stairs / corridor / restroom
+    - 自然场景：park / square
+    - 特殊场景：construction / parking
     """
     if bgr_image is None or bgr_image.size == 0:
         return "unknown", 0.0
 
     candidates: List[Tuple[str, float]] = []
 
-    # 1) 盲道 / 斑马线：优先复用 BlindPathNavigator 的分割输出（避免每次新建对象）
+    # 1) 盲道 / 斑马线：优先复用 BlindPathNavigator 的分割输出
     try:
         if blind_path_navigator is not None and hasattr(blind_path_navigator, "_detect_path_and_crosswalk"):
-            # 避免在模型未加载时使用 workflow_blindpath 内部的“模拟掩码”，防止误报
             if getattr(blind_path_navigator, "yolo_model", None) is not None:
                 blind_mask, crosswalk_mask = blind_path_navigator._detect_path_and_crosswalk(bgr_image)
 
@@ -2039,7 +2048,7 @@ def _detect_scene(bgr_image: np.ndarray) -> Tuple[str, float]:
     except Exception:
         pass
 
-    # 2) 红绿灯：复用 navigation_master 的 TrafficLightDetector（有后端则用后端，否则 HSV 回退）
+    # 2) 红绿灯：复用 navigation_master 的 TrafficLightDetector
     try:
         from navigation_master import TrafficLightDetector
         tld = TrafficLightDetector()
@@ -2049,12 +2058,44 @@ def _detect_scene(bgr_image: np.ndarray) -> Tuple[str, float]:
     except Exception:
         pass
 
-    # 3) 障碍物：使用 obstacle_detector（若可用）
+    # 3) 【新增】使用 semantic_engine 进行更广泛的场��识别
     try:
-        global obstacle_detector
+        global semantic_engine, obstacle_detector
+        if semantic_engine is not None and obstacle_detector is not None:
+            detections = obstacle_detector.detect(bgr_image)
+            if detections:
+                h, w = bgr_image.shape[:2]
+                mean_luma = float(np.mean(cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)))
+
+                # 提取物体名称用于场景推断
+                names = [d.get("name", "") for d in detections]
+                scene = semantic_engine.infer_scene(names, mean_luma=mean_luma)
+
+                if scene != "unknown":
+                    # 根据匹配到的关键词数量计算置信度
+                    scene_conf = 0.7
+                    candidates.append((scene, scene_conf))
+    except Exception as e:
+        if False:  # 调试时可启用
+            print(f"[SCENE_DETECT] semantic场景检测失败: {e}")
+
+    # 4) 障碍物：使用 obstacle_detector
+    try:
         if obstacle_detector is not None:
             detections = obstacle_detector.detect(bgr_image)
             if detections:
+                # 检查是否有危险等级的障碍物
+                has_hazard = False
+                for d in detections:
+                    name = str(d.get("name", "")).lower()
+                    area = float(d.get("area", 0) or 0)
+                    if name in ["car", "bus", "truck"] and area > 10000:
+                        has_hazard = True
+                        break
+
+                if has_hazard:
+                    candidates.append(("hazard", 0.85))
+
                 largest = max(detections, key=lambda d: d.get("area", 0) or 0)
                 area = float(largest.get("area", 0) or 0)
                 if area > 10000:
@@ -2072,14 +2113,35 @@ def _detect_scene(bgr_image: np.ndarray) -> Tuple[str, float]:
     if not candidates:
         return "unknown", 0.0
 
-    # 4) 选取置信度最高的场景；若相近，则偏向更“安全关键”的类别
+    # 5) 选取置信度最高的场景；危险场景优先
     pri = {
+        "hazard": 5,  # 最高优先级
         "obstacle": 4,
         "traffic_light_red": 4,
         "traffic_light_yellow": 3,
         "traffic_light_green": 3,
         "crosswalk": 2,
         "blindpath": 1,
+        # 新增场景优先级
+        "construction": 4,
+        "elevator": 3,
+        "stairs": 3,
+        "hospital": 2,
+        "supermarket": 2,
+        "mall": 2,
+        "subway": 3,
+        "park": 1,
+        "bus_stop": 2,
+        "restaurant": 2,
+        "bank": 2,
+        "office": 1,
+        "school": 1,
+        "corridor": 1,
+        "restroom": 1,
+        "square": 1,
+        "parking": 2,
+        "underpass": 2,
+        "bridge": 2,
         "unknown": 0,
     }
     candidates.sort(key=lambda x: (x[1], pri.get(x[0], 0)), reverse=True)
@@ -2087,18 +2149,70 @@ def _detect_scene(bgr_image: np.ndarray) -> Tuple[str, float]:
 
 def _get_scene_announcement(scene: str) -> Optional[str]:
     """
-    根据场景返回播报文本
-    返回 None 表示不播报
+    根据场景返回播报文本（使用结构化格式）
+
+    格式：[场景前缀] + [简要描述]
     """
-    announcements = {
+    # 危险场景（高优先级）
+    hazard_announcements = {
+        "hazard": "注意，前方有危险物体，先停下",
+    }
+
+    # 导航场景
+    navigation_announcements = {
         "blindpath": "前方检测到盲道",
         "crosswalk": "发现斑马线",
-        "traffic_light_red": "前方是红灯",
-        "traffic_light_green": "前方是绿灯",
-        "traffic_light_yellow": "前方是黄灯",
+        "traffic_light_red": "前方是红灯，请等待",
+        "traffic_light_green": "前方是绿灯，可以通行",
+        "traffic_light_yellow": "前方是黄灯，请注意",
         "obstacle": "前方有障碍物，注意安全",
-        "unknown": None  # 未知场景不播报
     }
+
+    # 建筑场景（新增）
+    building_announcements = {
+        "hospital": "医院环境，请注意周围",
+        "supermarket": "超市通道，货架较多",
+        "mall": "商场环境，小心扶梯",
+        "restaurant": "餐厅环境",
+        "bank": "银行环境",
+        "office": "办公楼环境",
+        "school": "学校环境",
+        "subway": "地铁站，注意闸机",
+        "bus_stop": "公交车站，注意站台边缘",
+    }
+
+    # 室内场景（新增）
+    indoor_announcements = {
+        "elevator": "电梯区域",
+        "stairs": "楼梯区域，注意脚下",
+        "corridor": "走廊",
+        "restroom": "卫生间",
+    }
+
+    # 自然场景（新增）
+    nature_announcements = {
+        "park": "公园环境",
+        "square": "广场环境",
+    }
+
+    # 特殊场景（新增）
+    special_announcements = {
+        "construction": "施工区域，请注意安全",
+        "parking": "停车场，注意车辆",
+        "underpass": "地下通道，注意照明",
+        "bridge": "天桥区域，注意台阶",
+    }
+
+    # 合并所有场景播报
+    announcements = {}
+    announcements.update(hazard_announcements)
+    announcements.update(navigation_announcements)
+    announcements.update(building_announcements)
+    announcements.update(indoor_announcements)
+    announcements.update(nature_announcements)
+    announcements.update(special_announcements)
+    announcements["unknown"] = None  # 未知场景不播报
+
     return announcements.get(scene)
 
 def process_imu_and_maybe_store(d: Dict[str, Any]):

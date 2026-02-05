@@ -1,0 +1,6 @@
+# 卫生间场景权重
+toilet 1.5
+sink 1.3
+mirror 1.2
+hand dryer 1.2
+person 1.0

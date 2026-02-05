@@ -1,0 +1,6 @@
+# 银行场景权重
+atm 1.5
+counter 1.3
+queue 1.3
+security 1.2
+person 1.1

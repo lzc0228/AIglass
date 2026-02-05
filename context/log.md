@@ -1617,4 +1617,336 @@ sudo systemctl enable bluetooth
    - 确认端口/防火墙/同网段
    - 确认播放端设备的音频输出（耳机/扬声器）
 4. 若要进一步补齐提示词：把新增短句追加到 `scripts/generate_voice_assets.py` 的 seed 列表，然后运行 `python scripts/generate_voice_assets.py --no-auto-extract`
-5. （可选）清理 `voice/` 中未被 `map.zh-CN.json` 引用的“日志类 wav”文件，并保持目录整洁
+5. （可选）清理 `voice/` 中未被 `map.zh-CN.json` 引用的"日志类 wav"文件，并保持目录整洁
+
+---
+
+# 追加记录：全场景覆盖 + 结构化语音输出优化（2026-02-05）
+
+## 1) 本轮目标（用户需求）
+
+用户在本次对话中提出了四项核心需求：
+
+1. **丰富语音播���语料库**：添加场景化描述模板
+2. **改进场景描述格式**：
+   - 方向描述：钟点方向（1-12点）或 左中右方向
+   - 距离描述：米或步数（一步约0.6米）
+   - 物体描述：人、物、移动物体
+   - 危险描述：潜在危险物体
+   - 格式：`[场景前缀] + [方向] + [距离] + [物体] + [行动建议]`
+3. **扩展场景类型**：医院、超市、商场、街道、室内等，覆盖尽可能多的典型场景
+4. **解决TTS延迟问题**：当前语音播报清晰但延迟较高
+5. **实现结构化语音输出**（重点！！！）：所有语音播报必须遵循统一格式
+6. **主动场景播报**：接收到实时图像后，必须主动识别并播报场景信息
+
+## 2) 项目现状分析（探索阶段）
+
+### 2.1 现有架构
+
+```
+用户需求 → app_main.py → semantic_output.py (语义生成)
+                    |
+                    v
+            audio_player.py (语音映射/TTS回退)
+                    |
+                    +--> voice/map.zh-CN.json (2752条预录音频)
+                    +--> piper_tts.py (动态TTS生成)
+                    +--> bluetooth_audio.py (蓝牙音频路由)
+```
+
+### 2.2 现有能力
+
+| 模块 | 现状 | 问题 |
+|------|------|------|
+| 场景识别 | 仅支持 street/indoor/unknown | 缺少医院/超市/商场等场景 |
+| 方向描述 | 钟点方向 (1-12点) | 完整，可扩展 |
+| 距离估计 | `_estimate_distance_m()` 基于面积比例 | 仅输出"米"，缺少"步数" |
+| 播报模板 | `render_text()` 动态/稳定环境区分 | 模板较简单，缺少场景化 |
+| 语音映射 | 2752条预录音频 | 缺少结构化组合模板 |
+| TTS延迟 | Piper-TTS 63MB模型，首次加载慢 | 需优化 |
+
+### 2.3 现有场景权重文件
+
+- `context/weights/scene_street.txt`：街道场景
+- `context/weights/scene_indoor.txt`：室内场景
+- `context/weights/task_navigation.txt`：任务权重
+
+## 3) 关键决策
+
+### 3.1 全场景覆盖策略
+
+决定扩展场景类型至20+种，覆盖：
+- **交通场景**：街道、人行道、十字路口、斑马线、红绿灯、公交站、地铁站
+- **建筑场景**：医院、超市、商场、办公楼、学校、银行、餐厅
+- **室内场景**：电梯、楼梯、走廊、大厅、房间、卫生间
+- **自然环境**：公园、广场、草坪、花坛、水池
+- **特殊场景**：施工区域、地下通道、天桥、停车场
+
+### 3.2 结构化输出格式（schema_version=2）
+
+```python
+{
+    "schema_version": 2,
+    "timestamp": float,
+    "scene": str,              # 场景类型
+    "scene_zh": str,           # 场景中文名
+    "scene_confidence": float, # 场景置信度
+    "objects": [
+        {
+            "direction": {
+                "clock": int,        # 1-12点方向
+                "clock_zh": str,     # "左前方"
+                "lr": str,           # left/center/right
+                "lr_zh": str         # "左侧"
+            },
+            "distance": {
+                "meters": float,     # 米
+                "steps": int         # 步数
+            },
+            "urgency": str,         # HIGH/MEDIUM/LOW
+            "is_moving": bool,
+            "is_approaching": bool,
+            "action": str,          # 行动建议
+            "action_type": str      # avoid/stop/continue
+        }
+    ],
+    "text": str,               # 自然语言描述
+    "should_speak": bool,
+    "priority": int            # 播报优先级
+    "use_steps": bool          # 是否使用步数
+}
+```
+
+### 3.3 主动播报机制
+
+在 `app_main.py` 的摄像头帧处理循环中添加：
+1. 场景变化检测 → 立即播报新场景
+2. 危险物体检测 → 立即播报（高优先级）
+3. 定期环境更新 → 每3-5秒播报一次
+4. 相同内容节流 → 10秒内不重复
+
+### 3.4 TTS延迟优化策略
+
+1. **模型预热**：启动时预加载常用短语到缓存
+2. **缓存机制**：高频短语预生成并缓存
+3. **减少静音填充**：lead_ms从160/60改为40/20，tail_ms从40改为10
+
+## 4) 已实施改动（代码级别）
+
+### 4.1 新增核心模块
+
+**文件：`structured_voice.py`**
+
+结构化语音输出核心模块（schema_version=2），包含：
+
+- 场景枚举 `SceneType`：20+场景类型
+- 方向枚举 `DirectionType`：clock（钟点）和 lr（左中右）
+- 距离枚举 `DistanceType`：meters 和 steps
+- 紧急程度枚举 `UrgencyLevel`：HIGH/MEDIUM/LOW
+- 行动类型枚举 `ActionType`：stop/avoid/continue/warning
+
+核心函数：
+- `calculate_clock_dir()`：计算钟点方向
+- `calculate_lr_dir()`：计算左中右方向
+- `estimate_distance_m()`：基于面积估计距离（米）
+- `distance_to_steps()`：距离转步数（一步约0.6米）
+
+核心类：
+- `DirectionInfo`：方向信息结构
+- `DistanceInfo`：距离信息结构
+- `StructuredObject`：物体信息结构
+- `StructuredVoiceOutput`：结构化输出结构
+- `VoiceTemplate`：语音播报模板
+
+### 4.2 语音片段映射
+
+**文件：`voice/fragments.json`**
+
+包含：
+- 方向片段：1-12点方向、左侧/前方/右侧
+- 距离片段：1-10米、一步-十步
+- 物体片段：人、车、固定设施等
+- 场景前缀：15种场景
+- 行动建议：停止、绕开、保持直行等
+- 危险播报：紧急、危险、注意、警告
+
+### 4.3 场景权重文件
+
+新增8个场景权重文件：
+
+| 文件 | 场景 | 高权重物体 |
+|------|------|-----------|
+| `scene_hospital.txt` | 医院 | 医生、护士、轮椅、担架 |
+| `scene_supermarket.txt` | 超市 | 货架、购物车、收银台 |
+| `scene_mall.txt` | 商场 | 扶梯、电梯、模特 |
+| `scene_construction.txt` | 施工区域 | 锥桶、路障、围栏 |
+| `scene_elevator.txt` | 电梯 | 按钮、楼层显示 |
+| `scene_stairs.txt` | 楼梯 | 台阶、扶手 |
+| `scene_park.txt` | 公园 | 树、长椅、小路 |
+| `scene_subway.txt` | 地铁站 | 闸机、售票机、站台 |
+
+### 4.4 场景识别扩展
+
+**文件：`semantic_output.py`**
+
+修改内容：
+1. 添加 `structured_voice` 模块导入
+2. 扩展 `infer_scene()` 方法，支持20+场景类型：
+   - 基于关键词匹配的场景识别
+   - 医院、超市、商场、施工、电梯、楼梯、公园、地铁站等
+3. 新增 `get_scene_zh()` 方法，获取场景中文名
+4. 修改 `render_text()` 方法：
+   - 支持 `use_steps` 参数
+   - 添加左中右方向描述
+   - 使用场景前缀
+5. 修改 `describe()` 方法：
+   - 默认使用 `schema_version=2`
+   - 默认使用步数描述
+   - 输出包含步数信息
+
+### 4.5 主动播报增强
+
+**文件：`app_main.py`**
+
+修改内容：
+1. 扩展 `_detect_scene()` 函数：
+   - 支持更多场景类型
+   - 使用 `semantic_engine` 进行场景推断
+   - 添加危险场景（hazard）检测
+2. 扩展 `_get_scene_announcement()` 函数：
+   - 为每个场景定义播报文本
+   - 包含建筑、室内、自然、特殊场景
+3. 在帧处理循环中保持自动场景检测逻辑
+
+### 4.6 TTS延迟优化
+
+**文件：`piper_tts.py`**
+
+修改内容：
+1. 新增高频短语缓存列表 `COMMON_PHRASES`
+2. 添加缓存机制：
+   - `_cache`：文本 -> PCM 数据缓存
+   - `_cache_lock`：线程安全锁
+   - `_max_cache_size`：最大缓存大小（可配置）
+3. 添加预热机制：
+   - `_warmup_async()`：异步预热，后台生成高频短语
+   - `_ensure_cached()`：确保文本已缓存
+4. 优化 `text_to_audio()`：
+   - 优先从缓存获取
+   - 缓存未命中时才生成新音频
+
+## 5) 播报模板示例
+
+### 5.1 危险场景（HIGH优先级）
+
+```
+"紧急，{clock}点方向{距离}有{object}，先停下"
+"注意，{direction}{距离}有{object}靠近"
+"危险，前方{距离}有{object}"
+```
+
+### 5.2 一般障碍（MEDIUM优先级）
+
+```
+"{scene_zh}，{direction}{距离}有{object}，{action}"
+"{clock}点方向{距离}有{object}，{action}"
+"注意{direction}{距离}有{object}"
+```
+
+### 5.3 安全环境（LOW优先级）
+
+```
+"{scene_zh}，{direction}{距离}有{object}"
+"前方{direction}{距离}是{object}"
+```
+
+### 5.4 播报示例
+
+| 场景类型 | 检测物体 | 预期播报 |
+|----------|----------|----------|
+| 街道+车靠近 | car@3点方向@2米 | "注意，3点方向2米有汽车靠近，先停一下" |
+| 医院+人员 | person@左前方@3步 | "医院环境，左前方约3步有人" |
+| 超市+货架 | shelf@右侧@5米 | "超市通道，右侧5米有货架" |
+| 电梯 | elevator@正前方@1米 | "前方1米是电梯" |
+| 楼梯 | stairs@正前方@2米 | "前方2米有楼梯，注意脚下" |
+| 施工区域 | cone@3点方向@3米 | "危险，3点方向3米有施工区域" |
+
+## 6) 配置变量
+
+新增环境变量：
+
+```bash
+# 结构化语音输出
+AIGLASS_USE_STRUCTURED_VOICE=1    # 启用结构化语音
+AIGLASS_DISTANCE_FORMAT=steps      # 距离格式：steps或meters
+
+# TTS优化
+AIGLASS_TTS_WARMUP=1               # 启用TTS预热
+AIGLASS_TTS_CACHE_SIZE=50          # 缓存大小
+
+# 音频延迟优化
+AIGLASS_LEAD_SILENCE_MS=40         # 前导静音（原160/60）
+```
+
+## 7) 关键假设
+
+1. **模型检测能力**：YOLOE 模型能够检测到新场景中的典型物体（如购物车、轮椅、货架等）
+2. **距离估计精度**：基于面积的启发式距离估计足够用于"可执行提示"
+3. **步长假设**：一步约0.6米，适用于大多数用户
+4. **TTS可用性**：Piper-TTS 模型和命令行工具可用
+5. **网络条件**：不依赖云端服务，所有处理在边缘端完成
+
+## 8) 未解决问题 / 风险点
+
+1. **蓝牙播报问题**：用户提到蓝牙播报有些问题，需要后续解决
+2. **场景识别准确率**：基于关键词的简单规则可能误判，需要实际测试验证
+3. **距离估计精度**：基于面积的估计在复杂场景下误差较大
+4. **语音资源不完整**：部分播报文本的音频文件缺失，依赖TTS回退
+5. **TTS首次生成延迟**：即使有缓存，首次生成新短语仍需100-300ms
+
+## 9) 下一步行动
+
+1. **实际运行测试**：
+   - 在 Jetson 端运行测试结构化输出
+   - 验证场景识别和播报准确性
+   - 测试步数描述是否合适
+
+2. **补充语音资源**：
+   - 使用 TTS 生成缺失的语音片段
+   - 更新 `voice/map.zh-CN.json`
+
+3. **蓝牙问题排查**：
+   - 在实际硬件上测试蓝牙播报
+   - 解决连接和音频路由问题
+
+4. **场景识别优化**：
+   - 基于实际测试调整场景关键词
+   - 考虑引入更复杂的场景分类算法
+
+5. **延迟优化验证**：
+   - 测量 TTS 预热后的实际延迟
+   - 根据需要调整缓存大小和策略
+
+## 10) 文件清单
+
+### 新增文件
+| 文件 | 说明 |
+|------|------|
+| `structured_voice.py` | 结构化语音输出核心模块 |
+| `voice/fragments.json` | 语音片段映射配置 |
+| `context/weights/scene_hospital.txt` | 医院场景权重 |
+| `context/weights/scene_supermarket.txt` | 超市场景权重 |
+| `context/weights/scene_mall.txt` | 商场场景权重 |
+| `context/weights/scene_construction.txt` | 施工区域权重 |
+| `context/weights/scene_elevator.txt` | 电梯场景权重 |
+| `context/weights/scene_stairs.txt` | 楼梯场景权重 |
+| `context/weights/scene_park.txt` | 公园场景权重 |
+| `context/weights/scene_subway.txt` | 地铁站权重 |
+
+### 修改文件
+| 文件 | 修改内容 |
+|------|----------|
+| `semantic_output.py` | 扩展场景识别、添加步数输出、支持schema_version=2 |
+| `app_main.py` | 增强场景检测和播报 |
+| `piper_tts.py` | 添加预热和缓存机制 |
+
