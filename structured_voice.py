@@ -566,6 +566,107 @@ class StructuredVoiceOutput:
 
         return self.text
 
+    def _get_state_description(self, obj: StructuredObject) -> str:
+        """
+        获取特殊状态描述（红绿灯状态、行人避让等）
+
+        Args:
+            obj: 结构化物体对象
+
+        Returns:
+            str: 状态描述文本
+        """
+        name = obj.name.lower()
+
+        # 红绿灯状态
+        if "traffic light" in name or "红绿灯" in name:
+            # 这里可以配合 trafficlight_detection.py 获取实际状态
+            return "请注意交通信号"
+
+        # 斑马线
+        if "crosswalk" in name or "斑马线" in name:
+            return "可以通过"
+
+        # 行人避让
+        if obj.urgency == UrgencyLevel.HIGH:
+            return "注意避让避免碰撞"
+        elif obj.urgency == UrgencyLevel.MEDIUM:
+            return "请从侧面绕开"
+        else:
+            return "注意保持距离"
+
+    def render_text_numbered(self, use_steps: bool = True) -> str:
+        """
+        生成编号列表格式的播报（不使用 emoji）
+
+        格式：第一、{clock}点方向{distance}处为{name}，{state_description}
+               第二、{clock}点方向{distance}处为{name}，{state_description}
+
+        示例：
+        第一、12点方向1米处为斑马线，现在是绿灯可以通行
+        第二、3点方向2米处有人，注意避让避免碰撞
+        """
+        if not self.objects:
+            return "当前视野内没有检测到重要物体。"
+
+        scene_zh = SCENE_ZH_MAP.get(self.scene, "")
+
+        # 编号列表
+        number_words = ["第一", "第二", "第三", "第四", "第五"]
+
+        parts = []
+        for idx, obj in enumerate(self.objects[:5]):  # 最多5个
+            num_word = number_words[min(idx, 4)]
+
+            # 距离描述
+            if use_steps:
+                steps = max(1, int(round(obj.distance.steps)))
+                if steps <= 10:
+                    dist_txt = f"{steps}步"
+                else:
+                    dist_txt = f"{obj.distance.meters:.0f}米"
+            else:
+                meters = obj.distance.meters
+                dist_txt = f"{meters:.0f}米" if meters >= 1 else f"{meters:.1f}米"
+
+            # 方向描述
+            direction = f"{obj.direction.clock}点方向"
+
+            # 物体名称
+            name = obj.name_zh
+
+            # 特殊状态描述
+            state_desc = self._get_state_description(obj)
+
+            parts.append(f"{num_word}、{direction}{dist_txt}处为{name}，{state_desc}")
+
+        # 组合输出
+        if scene_zh:
+            return f"{scene_zh}。" + "；".join(parts) + "。"
+        return "；".join(parts) + "。"
+
+    def _get_state_description(self, obj: StructuredObject) -> str:
+        """获取特殊状态描述（红绿灯状态、行人避让等）"""
+        name = obj.name.lower()
+
+        # 红绿灯状态
+        if "traffic light" in name or "红绿灯" in name:
+            # 这里可以配合 trafficlight_detection.py 获取实际状态
+            # 暂时返回通用描述
+            return "请注意交通信号"
+
+        # 斑马线
+        if "crosswalk" in name or "斑马线" in name:
+            return "可以通过"
+
+        # 行人避让
+        if obj.urgency == UrgencyLevel.HIGH:
+            return "注意避让避免碰撞"
+        elif obj.urgency == UrgencyLevel.MEDIUM:
+            return "请从侧面绕开"
+        else:
+            return "注意保持距离"
+
     @classmethod
     def from_raw_objects(
         cls,

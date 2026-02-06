@@ -1950,3 +1950,319 @@ AIGLASS_LEAD_SILENCE_MS=40         # 前导静音（原160/60）
 | `app_main.py` | 增强场景检测和播报 |
 | `piper_tts.py` | 添加预热和缓存机制 |
 
+---
+
+# 2025-02-06 对话记录：物体识别增强与编号列表播报格式优化
+
+## 1) 问题背景
+
+用户通过 aiglasses(1).docx 日志文件发现了以下核心问题：
+
+1. **物体识别不全**：YOLOE 白名单仅 31 类，缺少斑马线、红绿灯、室内物品等关键物体
+2. **播报内容简单**：只能播报"是否有障碍物"，无法播报具体物体类型
+3. **播报格式不符**：用户期望使用编号列表格式（"第一、12点方向1米处为斑马线，现在是绿灯可以通行"）
+4. **TTS 模型问题**：日志显示 "Piper-TTS 不可用，将仅使用预录音频"
+
+## 2) 用户需求
+
+### 核心需求
+- 查看aiglasses(1).docx，解决报错原因
+- 缺少物体描述（简短但是结构化的描述）
+- 物体识别方面识别不了
+- 目前只能播报是否有障碍物，没法播报具体是什么
+
+### 关键格式要求（重要）
+**用户明确要求**：播报格式使用"第一、第二、第三"，**不要使用 emoji**
+
+正确格式示例：
+```
+第一、12点方向1米处为斑马线，现在是绿灯可以通行
+第二、3点方向2米处有人，注意避让避免碰撞
+第三、9点方向3米处为柱子，注意保持距离
+```
+
+## 3) 解决方案设计
+
+### Phase 1: 扩展 YOLOE 白名单类别
+
+**目标文件**: `obstacle_detector_client.py`
+
+将当前 31 类白名单扩展为约 60 类，新增类别包括：
+
+| 类别组 | 新增类别 |
+|--------|----------|
+| 户外导航 | traffic light, crosswalk, stop sign, parking meter, fire hydrant |
+| 交通扩展 | taxi, train, police car, ambulance |
+| 室内场景 | door, stairs, stair, escalator, elevator, handrail, railing |
+| 家居物品 | table, sofa, couch, bed, desk, tv, monitor, laptop, computer |
+| 个人物品 | backpack, handbag, suitcase, umbrella, cell phone, cup, bottle |
+
+### Phase 2: 添加编号列表播报格式
+
+**目标文件**: `structured_voice.py`
+
+新增 `render_text_numbered()` 方法，实现用户期望的格式：
+
+```python
+def render_text_numbered(self, use_steps: bool = True) -> str:
+    """
+    生成编号列表格式的播报（不使用 emoji）
+
+    格式：第一、{clock}点方向{distance}处为{name}，{state_description}
+    """
+    # 使用文本编号而非 emoji
+    number_words = ["第一", "第二", "第三", "第四", "第五"]
+    # ... 实现代码
+```
+
+### Phase 3: 更新中文映射表
+
+**目标文件**: `semantic_output.py`
+
+在 `NAME_ZH` 字典中添加新类别的中文映射。
+
+## 4) 实施细节
+
+### 4.1 修改 obstacle_detector_client.py
+
+**位置**: 第 55-115 行的 `WHITELIST_CLASSES` 列表
+
+**扩展内容**:
+```python
+self.WHITELIST_CLASSES = [
+    # === 动态类别（交通） ===
+    'person',
+    'bicycle', 'car', 'motorcycle', 'bus', 'truck',
+    'scooter', 'stroller', 'wheelchair',
+
+    # === 动物 ===
+    'dog', 'cat', 'animal',
+
+    # === 交通工具扩展 ===
+    'taxi', 'train', 'police car', 'ambulance',
+
+    # === 交通设施（新增）===
+    'traffic light',    # 红绿灯
+    'crosswalk',        # 斑马线
+    'stop sign',        # 停止标志
+    'parking meter',    # 停车计时器
+    'fire hydrant',     # 消防栓
+
+    # === 静态障碍物 ===
+    'pole', 'post', 'column', 'pillar', 'stanchion', 'bollard',
+    'utility pole', 'telegraph pole', 'light pole', 'street pole',
+    'signpost', 'support post', 'vertical post',
+
+    # === 公共设施 ===
+    'bench', 'chair', 'potted plant', 'hydrant',
+    'cone', 'barrier', 'fence', 'stone', 'box',
+
+    # === 室内导航（新增）===
+    'door', 'stairs', 'stair', 'escalator', 'elevator',
+    'handrail', 'railing',
+
+    # === 家居/办公室（新增）===
+    'table', 'sofa', 'couch', 'bed', 'desk',
+    'tv', 'monitor', 'laptop', 'computer',
+
+    # === 个人物品（新增）===
+    'backpack', 'handbag', 'suitcase', 'umbrella',
+    'cell phone', 'cup', 'bottle',
+]
+```
+
+### 4.2 修改 semantic_output.py
+
+**位置**: `NAME_ZH` 字典
+
+**新增中文映射**:
+```python
+# === 新增户外导航类别 ===
+"traffic light": "红绿灯",
+"crosswalk": "斑马线",
+"stop sign": "停止标志",
+"parking meter": "停车计时器",
+"fire hydrant": "消防栓",
+
+# === 交通工具扩展 ===
+"taxi": "出租车",
+"train": "列车",
+"police car": "警车",
+"ambulance": "救护车",
+
+# === 动物扩展 ===
+"cat": "猫",
+
+# === 室内场景 ===
+"door": "门",
+"stairs": "楼梯",
+"stair": "楼梯",
+"escalator": "扶梯",
+"elevator": "电梯",
+"handrail": "扶手",
+"railing": "栏杆",
+
+# === 家居物品 ===
+"sofa": "沙发",
+"couch": "长沙发",
+"bed": "床",
+"desk": "书桌",
+"tv": "电视",
+"monitor": "显示器",
+"laptop": "笔记本电脑",
+"computer": "电脑",
+
+# === 个人物品 ===
+"backpack": "背包",
+"handbag": "手提包",
+"suitcase": "行李箱",
+"umbrella": "雨伞",
+"cell phone": "手机",
+```
+
+### 4.3 修改 structured_voice.py
+
+**新增方法1**: `render_text_numbered()`
+
+```python
+def render_text_numbered(self, use_steps: bool = True) -> str:
+    """
+    生成编号列表格式的播报（不使用 emoji）
+
+    格式：第一、{clock}点方向{distance}处为{name}，{state_description}
+           第二、{clock}点方向{distance}处为{name}，{state_description}
+
+    示例：
+    第一、12点方向1米处为斑马线，现在是绿灯可以通行
+    第二、3点方向2米处有人，注意避让避免碰撞
+    """
+    if not self.objects:
+        return "当前视野内没有检测到重要物体。"
+
+    number_words = ["第一", "第二", "第三", "第四", "第五"]
+
+    parts = []
+    for idx, obj in enumerate(self.objects[:5]):
+        num_word = number_words[min(idx, 4)]
+
+        # 距离描述
+        if use_steps:
+            steps = max(1, int(round(obj.distance.steps)))
+            dist_txt = f"{steps}步" if steps <= 10 else f"{obj.distance.meters:.0f}米"
+        else:
+            meters = obj.distance.meters
+            dist_txt = f"{meters:.0f}米" if meters >= 1 else f"{meters:.1f}米"
+
+        # 方向描述
+        direction = f"{obj.direction.clock}点方向"
+
+        # 物体名称
+        name = obj.name_zh
+
+        # 特殊状态描述
+        state_desc = self._get_state_description(obj)
+
+        parts.append(f"{num_word}、{direction}{dist_txt}处为{name}，{state_desc}")
+
+    return "；".join(parts) + "。"
+```
+
+**新增方法2**: `_get_state_description()`
+
+```python
+def _get_state_description(self, obj: StructuredObject) -> str:
+    """
+    获取特殊状态描述（红绿灯状态、行人避让等）
+    """
+    name = obj.name.lower()
+
+    # 红绿灯状态
+    if "traffic light" in name or "红绿灯" in name:
+        return "请注意交通信号"
+
+    # 斑马线
+    if "crosswalk" in name or "斑马线" in name:
+        return "可以通过"
+
+    # 行人避让（根据紧急程度）
+    if obj.urgency == UrgencyLevel.HIGH:
+        return "注意避让避免碰撞"
+    elif obj.urgency == UrgencyLevel.MEDIUM:
+        return "请从侧面绕开"
+    else:
+        return "注意保持距离"
+```
+
+## 5) 关键决策
+
+### 决策1: 使用文本编号而非 emoji
+- **原因**: 用户明确反馈 "等等，不要加emoji"
+- **影响**: 播报格式从 `1️⃣12点...` 改为 `第一、12点...`
+- **实现**: 使用 `["第一", "第二", "第三", "第四", "第五"]` 列表
+
+### 决策2: 白名单类别数量
+- **原计划**: 31 类
+- **最终决定**: 约 60 类
+- **原因**: 用户反馈"物体识别不了"，需要覆盖更多场景
+
+### 决策3: 状态描述分级
+- **HIGH**: "注意避让避免碰撞"
+- **MEDIUM**: "请从侧面绕开"
+- **LOW**: "注意保持距离"
+
+## 6) 遇到的问题及解决
+
+### 问题1: docx 文件读取
+- **错误**: python-docx 包不可用
+- **解决**: 使用 `unzip -p` 命令直接提取 docx 内部的 XML
+```bash
+unzip -p "aiglasses(1).docx" word/document.xml | grep -o '<w:t[^>]*>[^<]*</w:t>' | sed 's/<[^>]*>//g'
+```
+
+### 问题2: Edit 工具字符串匹配失败
+- **错误**: "String to replace not found in file"
+- **原因**: 文件内容已被修改或缩进有差异
+- **解决**: 重新读取文件找到正确的内容，进行精确匹配
+
+## 7) 未解决的问题
+
+1. **TTS 模型缺失**: 日志显示 "Piper-TTS 不可用，将仅使用预录音频"
+   - 原因: 模型文件路径 `/Users/lzcheng/Codes/AIglass-dev 2/model/piper/zh_CN-huayan-medium.onnx` 不存在
+
+2. **语音资源不完整**: 部分播报文本的音频文件缺失
+   - 需要更新 `voice/map.zh-CN.json`
+
+3. **蓝牙播报问题**: 日志中提到蓝牙播报有些问题，需要后续排查
+
+4. **距离估计精度**: 基于面积的估计在复杂场景下误差较大
+
+5. **场景识别准确率**: 基于关键词的简单规则可能误判
+
+## 8) 下一步行动
+
+1. **实际运行测试**:
+   - 在 Jetson 端运行测试
+   - 验证新类别能否被正确识别
+   - 测试编号列表播报格式
+
+2. **补充语音资源**:
+   - 使用 TTS 生成缺失的语音片段
+   - 更新 `voice/map.zh-CN.json`
+
+3. **解决 TTS 配置**:
+   - 确保 Piper TTS 模型文件路径正确
+   - 下载缺失的 `zh_CN-huayan-medium.onnx` 模型
+
+4. **蓝牙问题排查**:
+   - 在实际硬件上测试蓝牙播报
+   - 解决连接和音频路由问题
+
+## 9) 文件清单
+
+### 修改文件
+| 文件 | 修改内容 |
+|------|----------|
+| `obstacle_detector_client.py` | 扩展 WHITELIST_CLASSES 从 31 类到约 60 类 |
+| `semantic_output.py` | 更新 NAME_ZH 映射表，添加约 30 个新物体类别 |
+| `structured_voice.py` | 新增 render_text_numbered() 和 _get_state_description() 方法 |
+

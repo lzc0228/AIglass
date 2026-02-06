@@ -57,11 +57,61 @@ class ObstacleDetectorClient:
         self.model = None
         self.whitelist_embeddings = None
         self.WHITELIST_CLASSES = [
+            # === 动态类别（交通） ===
             'person',
-            'bicycle', 'car', 'motorcycle', 'bus', 'truck', 'animal', 'scooter', 'stroller', 'dog',
-            'pole', 'post', 'column', 'pillar', 'stanchion', 'bollard', 'utility pole',
-            'telegraph pole', 'light pole', 'street pole', 'signpost', 'support post',
-            'vertical post', 'bench', 'chair', 'potted plant', 'hydrant', 'cone', 'stone', 'box'
+            'bicycle', 'car', 'motorcycle', 'bus', 'truck',
+            'scooter', 'stroller', 'wheelchair',
+
+            # === 动物 ===
+            'dog', 'cat', 'animal',
+
+            # === 交通工具扩展 ===
+            'taxi', 'train', 'police car', 'ambulance',
+
+            # === 交通设施（新增） ===
+            'traffic light',    # 红绿灯
+            'crosswalk',        # 斑马线
+            'stop sign',        # 停止标志
+            'parking meter',    # 停车计时器
+            'fire hydrant',     # 消防栓
+
+            # === 静态障碍物 ===
+            'pole', 'post', 'column', 'pillar', 'stanchion', 'bollard',
+            'utility pole', 'telegraph pole', 'light pole', 'street pole',
+            'signpost', 'support post', 'vertical post',
+
+            # === 公共设施 ===
+            'bench', 'chair', 'potted plant', 'hydrant',
+            'cone', 'barrier', 'fence', 'stone', 'box',
+
+            # === 室内导航（新增）===
+            'door',             # 门
+            'stairs',           # 楼梯
+            'stair',            # 楼梯（单数）
+            'escalator',        # 扶梯
+            'elevator',         # 电梯
+            'handrail',         # 扶手
+            'railing',          # 栏杆
+
+            # === 家居/办公室（新增）===
+            'table',            # 桌子
+            'sofa',             # 沙发
+            'couch',            # 长沙发
+            'bed',              # 床
+            'desk',             # 书桌
+            'tv',               # 电视
+            'monitor',          # 显示器
+            'laptop',           # 笔记本电脑
+            'computer',         # 电脑
+
+            # === 个人物品（新增）===
+            'backpack',         # 背包
+            'handbag',          # 手提包
+            'suitcase',         # 行李箱
+            'umbrella',         # 雨伞
+            'cell phone',       # 手机
+            'cup',              # 杯子
+            'bottle',           # 瓶子
         ]
         try:
             logger.info("正在加载 YOLOE 障碍物模型...")

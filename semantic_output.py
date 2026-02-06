@@ -204,8 +204,45 @@ NAME_ZH = {
     "atm": "取款机",
     "turnstile": "闸机",
     "ticket machine": "售票机",
+    "ticket gate": "闸机",
+    "fare gate": "闸机",
     "table": "桌子",
     "chair": "椅子",
+    # === 新增户外导航类别 ===
+    "traffic light": "红绿灯",
+    "crosswalk": "斑马线",
+    "stop sign": "停止标志",
+    "parking meter": "停车计时器",
+    # === 交通工具扩展 ===
+    "taxi": "出租车",
+    "train": "列车",
+    "police car": "警车",
+    "ambulance": "救护车",
+    # === 动物扩展 ===
+    "cat": "猫",
+    # === 室内场景 ===
+    "door": "门",
+    "stairs": "楼梯",
+    "stair": "楼梯",
+    "escalator": "扶梯",
+    "elevator": "电梯",
+    "handrail": "扶手",
+    "railing": "栏杆",
+    # === 家居物品 ===
+    "sofa": "沙发",
+    "couch": "长沙发",
+    "bed": "床",
+    "desk": "书桌",
+    "tv": "电视",
+    "monitor": "显示器",
+    "laptop": "笔记本电脑",
+    "computer": "电脑",
+    # === 个人物品 ===
+    "backpack": "背包",
+    "handbag": "手提包",
+    "suitcase": "行李箱",
+    "umbrella": "雨伞",
+    "cell phone": "手机",
 }
 
 
