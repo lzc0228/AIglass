@@ -147,6 +147,28 @@ def _load_literal_dict(path: Path, var_name: str) -> dict:
     return {}
 
 
+def _load_literal_value(path: Path, var_name: str):
+    try:
+        src = path.read_text(encoding="utf-8")
+        tree = ast.parse(src, filename=str(path))
+    except Exception:
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        for t in targets:
+            if isinstance(t, ast.Name) and t.id == var_name:
+                try:
+                    return ast.literal_eval(node.value)
+                except Exception:
+                    return None
+    return None
+
+
 def _load_local_items(repo_root: Path) -> Set[str]:
     data = _load_literal_dict(repo_root / "qwen_extractor.py", "LOCAL_CN2EN")
     if isinstance(data, dict):
@@ -162,6 +184,79 @@ def _load_color_names(repo_root: Path) -> Set[str]:
     # 合并/特殊色名
     names |= {"蓝绿色", "紫红色", "未知"}
     return names
+
+
+def _build_whitelist_voice_phrases(repo_root: Path) -> Set[str]:
+    """为障碍物白名单构建更全面的预设语音短语。"""
+    phrases: Set[str] = set()
+
+    classes = _load_literal_value(repo_root / "obstacle_detector_client.py", "DEFAULT_WHITELIST_CLASSES")
+    if not isinstance(classes, list):
+        classes = []
+
+    zh_map = _load_literal_dict(repo_root / "structured_voice.py", "NAME_ZH")
+    if not isinstance(zh_map, dict):
+        zh_map = {}
+
+    scene_prefixes = ["街道环境", "人行道上", "室内环境", "路口附近"]
+    direction_phrases = ["前方", "左侧", "右侧", "12点方向", "3点方向", "9点方向"]
+    distance_phrases = ["约一步", "约两步", "约三步", "1米", "2米", "3米"]
+    action_phrases = ["保持直行", "请从侧面绕开", "注意避让", "先停一下"]
+
+    dynamic_set = {
+        "person", "bicycle", "car", "motorcycle", "bus", "truck", "scooter",
+        "dog", "cat", "animal", "taxi", "train", "police car", "ambulance",
+    }
+    hazard_set = {
+        "crosswalk", "traffic light", "stop sign", "stairs", "stair", "escalator",
+        "elevator", "cone", "barrier", "fence", "stone", "box",
+    }
+
+    phrases |= {
+        "已开启实时物体播报",
+        "已关闭实时物体播报",
+        "实时物体播报已启动",
+        "当前画面未检测到白名单物体",
+    }
+
+    for item in classes:
+        key = str(item or "").strip().lower()
+        if not key:
+            continue
+        name_zh = str(zh_map.get(key, key))
+
+        phrases.add(f"检测到{name_zh}")
+        phrases.add(f"前方有{name_zh}")
+        phrases.add(f"{name_zh}在附近")
+
+        for d in direction_phrases:
+            phrases.add(f"{d}有{name_zh}")
+            phrases.add(f"{d}检测到{name_zh}")
+
+        for dist in distance_phrases:
+            phrases.add(f"前方{dist}有{name_zh}")
+            phrases.add(f"{dist}处有{name_zh}")
+
+        for d in direction_phrases[:3]:
+            for dist in distance_phrases[:4]:
+                phrases.add(f"{d}{dist}有{name_zh}")
+
+        for scene in scene_prefixes:
+            phrases.add(f"{scene}，前方有{name_zh}")
+
+        if key in dynamic_set:
+            phrases.add(f"注意，{name_zh}正在靠近")
+            phrases.add(f"{name_zh}靠近，请注意避让")
+            phrases.add(f"{name_zh}在移动，注意安全")
+
+        if key in hazard_set:
+            phrases.add(f"注意{name_zh}，请减速")
+            phrases.add(f"{name_zh}在前方，请谨慎通行")
+
+        for action in action_phrases:
+            phrases.add(f"发现{name_zh}，{action}")
+
+    return phrases
 
 
 def _default_seed_phrases(repo_root: Path) -> Set[str]:
@@ -349,6 +444,9 @@ def _default_seed_phrases(repo_root: Path) -> Set[str]:
         "前方有障碍物靠近，请注意。",
         "前方远处有障碍物。",
     }
+
+    # ===== 白名单物体全量语音扩展（全面且详细） =====
+    phrases |= _build_whitelist_voice_phrases(repo_root)
 
     return phrases
 

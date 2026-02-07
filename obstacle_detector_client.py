@@ -1,6 +1,8 @@
 # app/cloud/obstacle_detector_client.py (新文件)
 import logging
 import os
+import sys
+import zipfile
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.environ.setdefault("YOLO_CONFIG_DIR", os.path.join(_BASE_DIR, ".ultralytics"))
 try:
@@ -16,6 +18,111 @@ from ultralytics import YOLO
 from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_local_clip_available() -> bool:
+    """
+    优先使用仓库内的 CLIP 代码（CLIP-main.zip 或 CLIP-main 目录），
+    以避免离线环境无法 pip 安装 clip。
+    """
+    try:
+        import clip  # noqa: F401
+        return True
+    except Exception:
+        pass
+
+    repo_root = _BASE_DIR
+    clip_zip = os.path.join(repo_root, "CLIP-main.zip")
+    clip_dir_root = os.path.join(repo_root, "CLIP-main")
+    clip_vendor_root = os.path.join(repo_root, "third_party", "CLIP-main")
+
+    # 如果已有解压目录，直接尝试加入 sys.path
+    for candidate in (clip_vendor_root, clip_dir_root):
+        if os.path.isdir(os.path.join(candidate, "clip")):
+            if candidate not in sys.path:
+                sys.path.insert(0, candidate)
+            try:
+                import clip  # noqa: F401
+                logger.info("已从本地目录加载 CLIP: %s", candidate)
+                return True
+            except Exception:
+                pass
+
+    # 尝试从 CLIP-main.zip 自动解压
+    if os.path.exists(clip_zip):
+        try:
+            os.makedirs(os.path.dirname(clip_vendor_root), exist_ok=True)
+            with zipfile.ZipFile(clip_zip, "r") as zf:
+                zf.extractall(os.path.dirname(clip_vendor_root))
+            if os.path.isdir(os.path.join(clip_vendor_root, "clip")):
+                if clip_vendor_root not in sys.path:
+                    sys.path.insert(0, clip_vendor_root)
+                import clip  # noqa: F401
+                logger.info("已从 CLIP-main.zip 解压并加载 CLIP: %s", clip_vendor_root)
+                return True
+        except Exception as e:
+            logger.warning("尝试从 CLIP-main.zip 加载 clip 失败: %s", e)
+
+    return False
+
+
+DEFAULT_WHITELIST_CLASSES = [
+    # === 动态类别（交通） ===
+    'person',
+    'bicycle', 'car', 'motorcycle', 'bus', 'truck',
+    'scooter', 'stroller', 'wheelchair',
+
+    # === 动物 ===
+    'dog', 'cat', 'animal',
+
+    # === 交通工具扩展 ===
+    'taxi', 'train', 'police car', 'ambulance',
+
+    # === 交通设施（新增） ===
+    'traffic light',    # 红绿灯
+    'crosswalk',        # 斑马线
+    'stop sign',        # 停止标志
+    'parking meter',    # 停车计时器
+    'fire hydrant',     # 消防栓
+
+    # === 静态障碍物 ===
+    'pole', 'post', 'column', 'pillar', 'stanchion', 'bollard',
+    'utility pole', 'telegraph pole', 'light pole', 'street pole',
+    'signpost', 'support post', 'vertical post',
+
+    # === 公共设施 ===
+    'bench', 'chair', 'potted plant', 'hydrant',
+    'cone', 'barrier', 'fence', 'stone', 'box',
+
+    # === 室内导航（新增）===
+    'door',             # 门
+    'stairs',           # 楼梯
+    'stair',            # 楼梯（单数）
+    'escalator',        # 扶梯
+    'elevator',         # 电梯
+    'handrail',         # 扶手
+    'railing',          # 栏杆
+
+    # === 家居/办公室（新增）===
+    'table',            # 桌子
+    'sofa',             # 沙发
+    'couch',            # 长沙发
+    'bed',              # 床
+    'desk',             # 书桌
+    'tv',               # 电视
+    'monitor',          # 显示器
+    'laptop',           # 笔记本电脑
+    'computer',         # 电脑
+
+    # === 个人物品（新增）===
+    'backpack',         # 背包
+    'handbag',          # 手提包
+    'suitcase',         # 行李箱
+    'umbrella',         # 雨伞
+    'cell phone',       # 手机
+    'cup',              # 杯子
+    'bottle',           # 瓶子
+]
 
 # --- GPU/CPU & AMP 配置 (从 blindpath 工作流迁移而来，保持一致) ---
 DEVICE = os.getenv("AIGLASS_DEVICE", "cuda:0")
@@ -56,63 +163,11 @@ class ObstacleDetectorClient:
     def __init__(self, model_path: str = 'models/yoloe-11l-seg.pt'):
         self.model = None
         self.whitelist_embeddings = None
-        self.WHITELIST_CLASSES = [
-            # === 动态类别（交通） ===
-            'person',
-            'bicycle', 'car', 'motorcycle', 'bus', 'truck',
-            'scooter', 'stroller', 'wheelchair',
+        self.use_whitelist = True
+        self.WHITELIST_CLASSES = list(DEFAULT_WHITELIST_CLASSES)
 
-            # === 动物 ===
-            'dog', 'cat', 'animal',
-
-            # === 交通工具扩展 ===
-            'taxi', 'train', 'police car', 'ambulance',
-
-            # === 交通设施（新增） ===
-            'traffic light',    # 红绿灯
-            'crosswalk',        # 斑马线
-            'stop sign',        # 停止标志
-            'parking meter',    # 停车计时器
-            'fire hydrant',     # 消防栓
-
-            # === 静态障碍物 ===
-            'pole', 'post', 'column', 'pillar', 'stanchion', 'bollard',
-            'utility pole', 'telegraph pole', 'light pole', 'street pole',
-            'signpost', 'support post', 'vertical post',
-
-            # === 公共设施 ===
-            'bench', 'chair', 'potted plant', 'hydrant',
-            'cone', 'barrier', 'fence', 'stone', 'box',
-
-            # === 室内导航（新增）===
-            'door',             # 门
-            'stairs',           # 楼梯
-            'stair',            # 楼梯（单数）
-            'escalator',        # 扶梯
-            'elevator',         # 电梯
-            'handrail',         # 扶手
-            'railing',          # 栏杆
-
-            # === 家居/办公室（新增）===
-            'table',            # 桌子
-            'sofa',             # 沙发
-            'couch',            # 长沙发
-            'bed',              # 床
-            'desk',             # 书桌
-            'tv',               # 电视
-            'monitor',          # 显示器
-            'laptop',           # 笔记本电脑
-            'computer',         # 电脑
-
-            # === 个人物品（新增）===
-            'backpack',         # 背包
-            'handbag',          # 手提包
-            'suitcase',         # 行李箱
-            'umbrella',         # 雨伞
-            'cell phone',       # 手机
-            'cup',              # 杯子
-            'bottle',           # 瓶子
-        ]
+        # 先尝试接入本地 CLIP（用于 YOLOE 文本提示白名单）
+        _ensure_local_clip_available()
         try:
             logger.info("正在加载 YOLOE 障碍物模型...")
             self.model = YOLO(model_path)
@@ -121,12 +176,20 @@ class ObstacleDetectorClient:
             logger.info(f"YOLOE 障碍物模型加载成功，使用设备: {DEVICE}")
 
             logger.info("正在为 YOLOE 预计算白名单文本特征...")
-            if IS_CUDA and AMP_DTYPE is not None:
-                with torch.inference_mode(), torch.amp.autocast(device_type='cuda', dtype=AMP_DTYPE):
+            try:
+                if IS_CUDA and AMP_DTYPE is not None:
+                    with torch.inference_mode(), torch.amp.autocast(device_type='cuda', dtype=AMP_DTYPE):
+                        self.whitelist_embeddings = self.model.get_text_pe(self.WHITELIST_CLASSES)
+                else:
                     self.whitelist_embeddings = self.model.get_text_pe(self.WHITELIST_CLASSES)
-            else:
-                self.whitelist_embeddings = self.model.get_text_pe(self.WHITELIST_CLASSES)
-            logger.info("YOLOE 特征预计算完成。")
+                logger.info("YOLOE 特征预计算完成。")
+            except Exception as emb_err:
+                self.use_whitelist = False
+                self.whitelist_embeddings = None
+                logger.warning(
+                    "YOLOE 白名单文本特征初始化失败，将退化为模型默认类别检测（通常是 clip 依赖缺失）: %s",
+                    emb_err,
+                )
         except Exception as e:
             logger.error(f"YOLOE 模型加载或特征计算失败: {e}", exc_info=True)
             raise
@@ -156,11 +219,12 @@ class ObstacleDetectorClient:
             return []
 
         H, W = image.shape[:2]
-        try:
-            self.model.set_classes(self.WHITELIST_CLASSES, self.whitelist_embeddings)
-        except Exception as e:
-            logger.error(f"设置 YOLOE 提示词失败: {e}")
-            return []
+        if self.use_whitelist and self.whitelist_embeddings is not None:
+            try:
+                self.model.set_classes(self.WHITELIST_CLASSES, self.whitelist_embeddings)
+            except Exception as e:
+                logger.warning(f"设置 YOLOE 白名单提示词失败，将退化为默认类别检测: {e}")
+                self.use_whitelist = False
 
         conf_thr = float(os.getenv("AIGLASS_OBS_CONF", "0.25"))
         with gpu_infer_slot():

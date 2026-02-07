@@ -566,35 +566,6 @@ class StructuredVoiceOutput:
 
         return self.text
 
-    def _get_state_description(self, obj: StructuredObject) -> str:
-        """
-        获取特殊状态描述（红绿灯状态、行人避让等）
-
-        Args:
-            obj: 结构化物体对象
-
-        Returns:
-            str: 状态描述文本
-        """
-        name = obj.name.lower()
-
-        # 红绿灯状态
-        if "traffic light" in name or "红绿灯" in name:
-            # 这里可以配合 trafficlight_detection.py 获取实际状态
-            return "请注意交通信号"
-
-        # 斑马线
-        if "crosswalk" in name or "斑马线" in name:
-            return "可以通过"
-
-        # 行人避让
-        if obj.urgency == UrgencyLevel.HIGH:
-            return "注意避让避免碰撞"
-        elif obj.urgency == UrgencyLevel.MEDIUM:
-            return "请从侧面绕开"
-        else:
-            return "注意保持距离"
-
     def render_text_numbered(self, use_steps: bool = True) -> str:
         """
         生成编号列表格式的播报（不使用 emoji）
@@ -754,13 +725,17 @@ NAME_ZH = {
     "person": "人", "people": "人",
     "car": "汽车", "bus": "公交车", "truck": "卡车",
     "bicycle": "自行车", "motorcycle": "摩托车", "scooter": "电动车",
-    "stroller": "婴儿车",
+    "stroller": "婴儿车", "dog": "狗", "cat": "猫", "animal": "动物",
+    "taxi": "出租车", "police car": "警车", "ambulance": "救护车",
     "train": "列车", "subway train": "地铁列车",
     "traffic light": "红绿灯", "crosswalk": "斑马线",
-    "pole": "杆子", "post": "柱子", "column": "柱子", "pillar": "柱子",
+    "stop sign": "停止标志", "parking meter": "停车计时器", "fire hydrant": "消防栓",
+    "pole": "杆子", "post": "柱子", "column": "柱子", "pillar": "柱子", "stanchion": "隔离柱",
     "bench": "长椅", "chair": "椅子",
     "potted plant": "盆栽", "hydrant": "消防栓",
-    "cone": "锥桶", "barrier": "路障", "fence": "围栏",
+    "cone": "锥桶", "barrier": "路障", "fence": "围栏", "stone": "石头", "box": "箱子",
+    "bollard": "路桩", "utility pole": "电线杆", "telegraph pole": "电线杆",
+    "light pole": "路灯杆", "street pole": "路灯杆", "support post": "支撑杆", "vertical post": "立柱",
     "stairs": "楼梯", "stair": "楼梯",
     "elevator": "电梯", "escalator": "扶梯",
     "handrail": "扶手", "railing": "栏杆",
@@ -769,7 +744,10 @@ NAME_ZH = {
     "doctor": "医生", "nurse": "护士",
     "shelf": "货架", "cart": "购物车", "shopping cart": "购物车",
     "checkout": "收银台", "counter": "柜台", "cashier": "收银员",
-    "table": "桌子",
+    "table": "桌子", "sofa": "沙发", "couch": "长沙发", "bed": "床", "desk": "书桌",
+    "tv": "电视", "monitor": "显示器", "laptop": "笔记本电脑", "computer": "电脑",
+    "backpack": "背包", "handbag": "手提包", "suitcase": "行李箱", "umbrella": "雨伞",
+    "cell phone": "手机", "cup": "杯子", "bottle": "瓶子",
     "atm": "取款机", "turnstile": "闸机", "ticket machine": "售票机",
     "ticket gate": "闸机", "fare gate": "闸机", "platform": "站台",
     "bus stop": "公交站", "bus stop sign": "公交站牌", "bus shelter": "公交站亭",

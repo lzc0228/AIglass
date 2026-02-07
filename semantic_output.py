@@ -213,6 +213,7 @@ NAME_ZH = {
     "crosswalk": "斑马线",
     "stop sign": "停止标志",
     "parking meter": "停车计时器",
+    "fire hydrant": "消防栓",
     # === 交通工具扩展 ===
     "taxi": "出租车",
     "train": "列车",
@@ -228,6 +229,9 @@ NAME_ZH = {
     "elevator": "电梯",
     "handrail": "扶手",
     "railing": "栏杆",
+    "stanchion": "隔离柱",
+    "barrier": "路障",
+    "fence": "围栏",
     # === 家居物品 ===
     "sofa": "沙发",
     "couch": "长沙发",
@@ -243,6 +247,8 @@ NAME_ZH = {
     "suitcase": "行李箱",
     "umbrella": "雨伞",
     "cell phone": "手机",
+    "cup": "杯子",
+    "bottle": "瓶子",
 }
 
 
@@ -831,7 +837,8 @@ class SemanticOutputEngine:
             )
             svo.should_speak = should_speak
             svo.priority = 100 if any(o.urgency == UrgencyLevel.HIGH for o in structured_objects) else 50
-            text = svo.render_text(use_steps=use_steps)
+            use_numbered = os.getenv("AIGLASS_STRUCTURED_NUMBERED", "1") == "1"
+            text = svo.render_text_numbered(use_steps=use_steps) if use_numbered else svo.render_text(use_steps=use_steps)
             svo.text = text
 
             out = svo.to_dict()

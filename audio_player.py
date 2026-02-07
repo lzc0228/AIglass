@@ -415,6 +415,50 @@ def _pre_generate_voice_corpus():
         if pcm:
             _save_generated_audio(it, pcm)
 
+
+def warmup_voice_texts(texts, max_items: int = 800) -> int:
+    """
+    批量预生成语音文本（用于白名单物体等高频提示语）。
+
+    返回：本次新生成（或缓存写入）的条目数。
+    """
+    if not texts:
+        return 0
+
+    if not _initialized:
+        initialize_audio_system()
+
+    # 仅在 TTS 可用时执行预生成
+    if not (_tts_enabled and _piper_tts and _piper_tts.is_available()):
+        return 0
+
+    generated = 0
+    seen = set()
+
+    try:
+        limit = int(max_items)
+    except Exception:
+        limit = 800
+
+    for raw in texts:
+        text = str(raw or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+
+        # 已有音频则跳过
+        if _find_audio_path_for_text(text)[1]:
+            continue
+
+        pcm = _get_pcm_for_text(text, allow_tts=True, save_generated=True)
+        if pcm:
+            generated += 1
+
+        if generated >= limit:
+            break
+
+    return generated
+
 def _enqueue_pcm_threadsafe(pcm_data: bytes):
     """将 PCM 数据推入播放队列（复用同一实时队列策略）"""
     global _audio_queue, _audio_priority

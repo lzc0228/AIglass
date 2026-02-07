@@ -86,7 +86,7 @@ from asr_core import (
     set_current_recognition,
     stop_current_recognition,
 )
-from audio_player import initialize_audio_system, play_voice_text, play_structured_voice
+from audio_player import initialize_audio_system, play_voice_text, play_structured_voice, warmup_voice_texts
 from event_logger import get_event_logger
 
 # ---- 新功能模块 ----
@@ -104,6 +104,7 @@ from face_friend_recognition import FaceFriendRecognizer
 from light_reminder import get_light_detector
 # 语义输出模块（Top3 + 去冗余 + 模板生成）
 from semantic_output import get_semantic_engine
+from structured_voice import NAME_ZH as STRUCTURED_NAME_ZH
 # 物品搜索增强模块
 from item_search_enhancer import (
     get_item_search_enhancer,
@@ -203,8 +204,167 @@ scene_exploration_enabled = False
 last_semantic_emit_ts = 0.0
 semantic_emit_interval_sec = float(os.getenv("AIGLASS_SEM_PERIOD_SEC", "3.0"))
 
+# 【新增】实时物体播报（输入实时帧后自动播报）
+realtime_object_announce_enabled = os.getenv("AIGLASS_REALTIME_OBJECT_ANNOUNCE", "1") == "1"
+realtime_object_announce_interval = float(os.getenv("AIGLASS_REALTIME_OBJECT_PERIOD_SEC", "2.5"))
+last_realtime_object_announce_ts = 0.0
+
 # 【新增】事件记录器（JSONL，用于回放/评估）
 event_logger = None
+
+
+def _build_realtime_object_announce_text(out: Dict[str, Any]) -> str:
+    """从语义输出构建实时物体播报文本（优先简洁、可执行）。"""
+    if not isinstance(out, dict):
+        return ""
+
+    objs = out.get("objects") or []
+    if not objs:
+        return ""
+
+    top = objs[0] if isinstance(objs[0], dict) else {}
+    direction = top.get("direction") if isinstance(top.get("direction"), dict) else {}
+    distance = top.get("distance") if isinstance(top.get("distance"), dict) else {}
+
+    name_zh = str(top.get("name_zh") or top.get("name") or "物体").strip() or "物体"
+
+    clock = direction.get("clock")
+    lr_zh = str(direction.get("lr_zh") or "").strip()
+
+    direction_text = ""
+    if clock:
+        direction_text = f"{clock}点方向"
+    elif lr_zh:
+        direction_text = lr_zh
+    else:
+        direction_text = "前方"
+
+    use_steps = os.getenv("AIGLASS_DISTANCE_FORMAT", "steps").lower() == "steps"
+    distance_text = ""
+    if use_steps:
+        steps = distance.get("steps") or top.get("distance_steps")
+        if steps is not None:
+            try:
+                distance_text = f"约{max(1, int(round(float(steps))))}步"
+            except Exception:
+                distance_text = ""
+    else:
+        meters = distance.get("meters") or top.get("distance_m")
+        if meters is not None:
+            try:
+                m = float(meters)
+                distance_text = f"{m:.0f}米" if m >= 1 else f"{m:.1f}米"
+            except Exception:
+                distance_text = ""
+
+    urgency = str(top.get("urgency") or "").upper()
+    action = str(top.get("action") or top.get("avoidance_action") or "").strip().rstrip("。")
+
+    prefix = ""
+    if urgency == "HIGH":
+        prefix = "紧急，"
+    elif urgency == "MEDIUM":
+        prefix = "注意，"
+
+    base = f"{prefix}{direction_text}"
+    if distance_text:
+        base += distance_text
+    base += f"有{name_zh}"
+    if action:
+        base += f"，{action}"
+    return base
+
+
+def _build_whitelist_voice_phrases() -> List[str]:
+    """基于白名单构建详细预设语音语料（含方向/距离/行动建议模板）。"""
+    classes: List[str] = []
+    try:
+        from obstacle_detector_client import DEFAULT_WHITELIST_CLASSES
+        classes = list(DEFAULT_WHITELIST_CLASSES)
+    except Exception:
+        classes = []
+
+    zh_map = dict(STRUCTURED_NAME_ZH or {})
+    scene_prefixes = ["街道环境", "人行道上", "室内环境", "路口附近"]
+    direction_phrases = ["前方", "左侧", "右侧", "12点方向", "3点方向", "9点方向"]
+    distance_phrases = ["约一步", "约两步", "约三步", "1米", "2米", "3米"]
+    action_phrases = ["保持直行", "请从侧面绕开", "注意避让", "先停一下"]
+
+    dynamic_set = {
+        "person", "bicycle", "car", "motorcycle", "bus", "truck", "scooter",
+        "dog", "cat", "animal", "taxi", "train", "police car", "ambulance",
+    }
+    hazard_set = {
+        "crosswalk", "traffic light", "stop sign", "stairs", "stair", "escalator",
+        "elevator", "cone", "barrier", "fence", "stone", "box",
+    }
+
+    phrases: List[str] = []
+    seen: Set[str] = set()
+
+    def add(text: str):
+        t = (text or "").strip()
+        if not t or t in seen:
+            return
+        seen.add(t)
+        phrases.append(t)
+
+    add("已开启实时物体播报")
+    add("已关闭实时物体播报")
+    add("实时物体播报已启动")
+    add("当前画面未检测到白名单物体")
+
+    for cls in classes:
+        key = str(cls or "").strip().lower()
+        if not key:
+            continue
+        name_zh = zh_map.get(key) or key
+
+        add(f"检测到{name_zh}")
+        add(f"前方有{name_zh}")
+        add(f"{name_zh}在附近")
+
+        for d in direction_phrases:
+            add(f"{d}有{name_zh}")
+            add(f"{d}检测到{name_zh}")
+
+        for dist in distance_phrases:
+            add(f"前方{dist}有{name_zh}")
+            add(f"{dist}处有{name_zh}")
+
+        for d in direction_phrases[:3]:
+            for dist in distance_phrases[:4]:
+                add(f"{d}{dist}有{name_zh}")
+
+        for scene in scene_prefixes:
+            add(f"{scene}，前方有{name_zh}")
+
+        if key in dynamic_set:
+            add(f"注意，{name_zh}正在靠近")
+            add(f"{name_zh}靠近，请注意避让")
+            add(f"{name_zh}在移动，注意安全")
+
+        if key in hazard_set:
+            add(f"注意{name_zh}，请减速")
+            add(f"{name_zh}在前方，请谨慎通行")
+
+        for action in action_phrases:
+            add(f"发现{name_zh}，{action}")
+
+    return phrases
+
+
+def _warmup_object_voice_assets_in_background() -> None:
+    """后台预生成白名单物体相关语音，减少实时播报首次延迟。"""
+    def _runner():
+        try:
+            phrases = _build_whitelist_voice_phrases()
+            generated = warmup_voice_texts(phrases, max_items=int(os.getenv("AIGLASS_OBJECT_VOICE_PREGEN_MAX", "2000")))
+            print(f"[VOICE] 白名单物体预设语音准备完成: total={len(phrases)}, generated={generated}")
+        except Exception as e:
+            print(f"[VOICE] 白名单物体预设语音准备失败: {e}")
+
+    threading.Thread(target=_runner, daemon=True).start()
 
 # 【新增】模型加载函数
 def load_navigation_models():
@@ -939,6 +1099,7 @@ async def start_ai_with_text_custom(user_text: str):
 
     # ====== 新增命令：场景探索 / 语义描述 ======
     global semantic_engine, scene_exploration_enabled, last_semantic_emit_ts
+    global realtime_object_announce_enabled, last_realtime_object_announce_ts
 
     if ("开启场景探索" in user_text) or ("打开场景探索" in user_text) or ("持续描述" in user_text):
         if semantic_engine is None:
@@ -957,6 +1118,28 @@ async def start_ai_with_text_custom(user_text: str):
     if ("关闭场景探索" in user_text) or ("停止场景探索" in user_text):
         scene_exploration_enabled = False
         msg = "好的，已关闭场景探索。"
+        await ui_broadcast_final(f"[AI] {msg}")
+        play_voice_text(msg)
+        return
+
+    # ====== 新增命令：实时物体播报 ======
+    if ("开启实时物体播报" in user_text) or ("打开实时物体播报" in user_text) or ("开启物体播报" in user_text):
+        if semantic_engine is None:
+            try:
+                semantic_engine = get_semantic_engine()
+            except Exception as e:
+                await ui_broadcast_final(f"[AI] 语义输出模块初始化失败: {e}")
+                return
+        realtime_object_announce_enabled = True
+        last_realtime_object_announce_ts = 0.0
+        msg = "已开启实时物体播报。"
+        await ui_broadcast_final(f"[AI] {msg}")
+        play_voice_text(msg)
+        return
+
+    if ("关闭实时物体播报" in user_text) or ("停止实时物体播报" in user_text) or ("关闭物体播报" in user_text):
+        realtime_object_announce_enabled = False
+        msg = "已关闭实时物体播报。"
         await ui_broadcast_final(f"[AI] {msg}")
         play_voice_text(msg)
         return
@@ -1501,6 +1684,7 @@ async def ws_audio(ws: WebSocket):
 async def ws_camera_esp(ws: WebSocket):
     global esp32_camera_ws, blind_path_navigator, cross_street_navigator, cross_street_active, navigation_active, orchestrator
     global last_semantic_emit_ts, scene_exploration_enabled
+    global last_realtime_object_announce_ts, realtime_object_announce_enabled
     global last_night_light_remind_time, last_auto_detection_time, current_detected_scene
     if esp32_camera_ws is not None:
         await ws.close(code=1013)
@@ -1723,6 +1907,31 @@ async def ws_camera_esp(ws: WebSocket):
                     except Exception as e:
                         if frame_counter % 200 == 0:
                             print(f"[SEMANTIC] 输出失败: {e}")
+
+                # 【新增】实时物体播报：输入实时帧后直接播报白名单物体（默认开启）
+                if semantic_engine is not None and realtime_object_announce_enabled and bgr is not None:
+                    try:
+                        now_ts = time.time()
+                        if (now_ts - last_realtime_object_announce_ts) >= realtime_object_announce_interval:
+                            h, w = bgr.shape[:2]
+                            mean_luma = float(np.mean(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)))
+                            raw_objs = obstacle_detector.detect(bgr) if obstacle_detector is not None else []
+                            out = semantic_engine.describe(
+                                raw_objs,
+                                frame_w=w,
+                                frame_h=h,
+                                mean_luma=mean_luma,
+                                imu_yaw_deg=latest_yaw_deg,
+                                imu_yaw_rate_dps=latest_yaw_rate_dps,
+                            )
+                            msg = _build_realtime_object_announce_text(out)
+                            if msg and out.get("should_speak", False):
+                                play_voice_text(msg)
+                                await ui_broadcast_final(f"[导航] {msg}")
+                                last_realtime_object_announce_ts = now_ts
+                    except Exception as e:
+                        if frame_counter % 200 == 0:
+                            print(f"[REALTIME_OBJECT] 播报失败: {e}")
 
                 # 【新增】自动场景识别：接收到画面后自动运行检测并主动播报
                 if auto_scene_detection and bgr is not None:
@@ -2393,6 +2602,10 @@ async def on_startup_init_audio():
 
     # 等待音频系统初始化，然后播放测试语音
     await asyncio.sleep(2)  # 等待初始化完成
+
+    # 后台预热：为白名单物体准备预设语音（尽可能覆盖）
+    _warmup_object_voice_assets_in_background()
+
     try:
         play_voice_text("系统已启动")
         print("[AUDIO] 已播放测试语音: 系统已启动")
