@@ -27,6 +27,9 @@ music_downloads/
 *.mp4
 !voice/**/*.wav
 !voice/**/*.WAV
+# 运行时 TTS 缓存（不提交）
+voice/generated/
+voice/map.generated.json
 
 # Static assets
 static/

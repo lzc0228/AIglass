@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import logging
 import time
+import sys
 from typing import Optional, Dict
 from pathlib import Path
 import wave
@@ -75,6 +76,7 @@ class PiperTTS:
 
         # 可执行文件路径
         self.executable = executable
+        self._use_python_module = False
 
         # 【新增】缓存和预热相关
         self._cache: Dict[str, bytes] = {}  # 文本 -> PCM 数据缓存
@@ -119,12 +121,25 @@ class PiperTTS:
             logger.info("[Piper] 或: python scripts/download_piper_model.py")
             return
 
-        # 检查可执行文件或 Python 包
-        if self._check_executable() or self._check_python_package():
+        has_exec = self._check_executable()
+        has_pkg = self._check_python_package()
+
+        if has_exec:
+            self._use_python_module = False
             self._available = True
-            logger.info("[Piper] Piper-TTS 已就绪")
-        else:
-            logger.warning("[Piper] Piper 不可用，请安装: pip install piper-tts")
+            logger.info("[Piper] Piper-TTS 已就绪（命令行）")
+            return
+
+        if has_pkg:
+            if self._check_python_module_entrypoint():
+                self._use_python_module = True
+                self._available = True
+                logger.info("[Piper] Piper-TTS 已就绪（python -m piper）")
+            else:
+                logger.warning("[Piper] 已安装 piper 包，但 python -m piper 不可执行")
+            return
+
+        logger.warning("[Piper] Piper 不可用，请安装: pip install piper-tts")
 
     def _check_executable(self) -> bool:
         """检查 piper 可执行文件是否存在"""
@@ -140,18 +155,48 @@ class PiperTTS:
 
     def _check_python_package(self) -> bool:
         """检查 piper Python 包是否可用"""
-        # 优先使用 onnxruntime（已安装）
-        try:
-            import onnxruntime
-            return True
-        except ImportError:
-            pass
-        # 备用：检查 piper 包
         try:
             import piper
             return True
         except ImportError:
             return False
+
+    def _check_python_module_entrypoint(self) -> bool:
+        """检查 python -m piper 是否可调用。"""
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "piper", "--help"],
+                capture_output=True,
+                timeout=3,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _build_piper_command(self, temp_input: str, output_path: str):
+        """构建 Piper 调用命令。"""
+        if self._use_python_module:
+            return [
+                sys.executable,
+                "-m",
+                "piper",
+                "--model",
+                self.model_path,
+                "--input_file",
+                temp_input,
+                "--output_file",
+                output_path,
+            ]
+
+        return [
+            self.executable,
+            "--model",
+            self.model_path,
+            "--input_file",
+            temp_input,
+            "--output_file",
+            output_path,
+        ]
 
     def _warmup_async(self):
         """异步预热：在后台线程中预生成高频短语"""
@@ -258,13 +303,9 @@ class PiperTTS:
                 temp_input = f.name
 
             try:
+                cmd = self._build_piper_command(temp_input, output_path)
                 result = subprocess.run(
-                    [
-                        self.executable,
-                        "--model", self.model_path,
-                        "--input_file", temp_input,
-                        "--output_file", output_path
-                    ],
+                    cmd,
                     capture_output=True,
                     text=True,
                     timeout=30

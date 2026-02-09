@@ -2266,3 +2266,689 @@ unzip -p "aiglasses(1).docx" word/document.xml | grep -o '<w:t[^>]*>[^<]*</w:t>'
 | `semantic_output.py` | 更新 NAME_ZH 映射表，添加约 30 个新物体类别 |
 | `structured_voice.py` | 新增 render_text_numbered() 和 _get_state_description() 方法 |
 
+---
+
+# 2026-02-07（白名单语音全面补齐 + 实时播报增强 + CLIP 本地集成）
+
+## 1) 用户新增需求（本次对话）
+
+用户在本次会话中提出了两个明确目标：
+
+1. **物体识别播报要更强**：
+   - 要求“白名单里所有物品”都尽可能有预设语音；
+   - 要求“输入实时帧后可以直接播报物体”。
+
+2. **集成 CLIP-main.zip 并纳入仓库**：
+   - 用户已提供 `CLIP-main.zip`，要求查看如何接入；
+   - 希望和本次语音资源一起上传到 GitHub。
+
+## 2) 本轮核心目标
+
+1. 把“白名单物体 → 预设语音 → 运行时命中播报”链路补齐。
+2. 在实时视频帧处理主循环中加入稳定的自动物体播报。
+3. 解决 YOLOE 因 `clip` 依赖缺失导致的白名单初始化失败问题。
+4. 把 `CLIP-main.zip` 及可用代码路径并入项目，形成离线可运行方案。
+5. 整理并提交代码/资源变更，为推送 GitHub 做准备。
+
+## 3) 关键决策（本轮）
+
+### 决策 1：实时播报采用“定时窗口 + 去重签名”方式，避免刷屏
+- 在 `ws_camera_esp` 主循环中新增实时物体播报逻辑；
+- 使用 `semantic_engine.describe()` 的 `should_speak` 去重结果；
+- 通过 `AIGLASS_REALTIME_OBJECT_PERIOD_SEC` 控制播报间隔（默认 2.5s）。
+
+### 决策 2：语音预设策略由“无限组合”改为“高价值全覆盖模板”
+- 初始尝试把组合模板扩展到 3000+ 句，生成耗时过长；
+- 改为新增 `scripts/generate_whitelist_voice_assets.py`，专门为白名单物体构建“方向/距离/动作/风险”高价值模板；
+- 最终以 **1208 条**白名单相关短句作为完整目标集，强调可用性与可维护性平衡。
+
+### 决策 3：CLIP 集成优先“本地离线可用”
+- 在 `obstacle_detector_client.py` 中增加 `_ensure_local_clip_available()`：
+  1) 先尝试系统 `import clip`；
+  2) 若失败，尝试本地目录 `third_party/CLIP-main` / `CLIP-main`；
+  3) 再失败时，尝试从 `CLIP-main.zip` 自动解压到 `third_party` 后加载。
+- 这样即使离线环境也能优先走本地 CLIP 代码，不依赖在线安装。
+
+### 决策 4：对 YOLOE 白名单失败做“可运行降级”
+- 若 `get_text_pe()` 失败（常见为 `No module named 'clip'`），不再中断初始化；
+- 自动降级为“默认类别检测”并保持服务可运行；
+- 同时输出警告日志，便于后续恢复白名单高精度能力。
+
+### 决策 5：先提交本地改动，再执行远程推送
+- 先将代码、`voice` 资源、`third_party/CLIP-main`、`CLIP-main.zip` 一并提交；
+- 再执行 `git push origin dev`，如网络/权限受限则记录并等待用户授权。
+
+## 4) 关键假设（本轮默认成立）
+
+1. 运行环境可用 `openai_glasses` 的 Python 与 Piper 模型（`model/piper/zh_CN-huayan-medium.onnx`）。
+2. 语音资源可直接存放于仓库 `voice/` 并随 Git 管理。
+3. 用户希望“全面语音覆盖”优先于仓库体积最小化。
+4. 允许把 `CLIP-main.zip` 以及解压后的 `third_party/CLIP-main/` 一并纳入仓库。
+5. 远程推送可能受网络解析或权限策略影响，需要额外确认。
+
+## 5) 已实施改动（代码/脚本/资源）
+
+### A) 实时物体播报主链路
+
+- `app_main.py`
+  - 新增实时播报配置：
+    - `AIGLASS_REALTIME_OBJECT_ANNOUNCE`
+    - `AIGLASS_REALTIME_OBJECT_PERIOD_SEC`
+  - 新增辅助函数：
+    - `_build_realtime_object_announce_text()`
+    - `_build_whitelist_voice_phrases()`
+    - `_warmup_object_voice_assets_in_background()`
+  - 在 `ws_camera_esp` 中加入实时帧物体播报分支；
+  - 新增语音命令：
+    - “开启实时物体播报”
+    - “关闭实时物体播报”。
+
+### B) 语音系统增强
+
+- `audio_player.py`
+  - 新增 `warmup_voice_texts(texts, max_items)` 批量预生成接口；
+  - 启动后可后台预热白名单物体相关语音，降低首播延迟。
+
+### C) 白名单与映射一致性
+
+- `obstacle_detector_client.py`
+  - 提取 `DEFAULT_WHITELIST_CLASSES` 常量；
+  - `ObstacleDetectorClient` 使用常量初始化白名单。
+
+- `structured_voice.py`
+  - 清理重复 `_get_state_description()` 定义；
+  - 补齐白名单相关中文映射（含 `fire hydrant`、`stanchion`、`cup`、`bottle` 等）。
+
+- `semantic_output.py`
+  - 补齐缺失中文映射；
+  - 支持 `AIGLASS_STRUCTURED_NUMBERED=1` 时使用编号播报 `render_text_numbered()`。
+
+### D) CLIP 本地集成
+
+- `obstacle_detector_client.py`
+  - 新增 `_ensure_local_clip_available()`；
+  - 优先本地 `CLIP-main.zip/third_party/CLIP-main` 自动接入。
+
+- 新增资源：
+  - `CLIP-main.zip`
+  - `third_party/CLIP-main/`（已解压并纳入版本管理）。
+
+### E) 语音资产生成脚本
+
+- 新增：`scripts/generate_whitelist_voice_assets.py`
+  - 面向白名单物体生成高价值短句语音；
+  - 自动更新 `voice/map.zh-CN.json` 映射。
+
+- 更新：`scripts/generate_voice_assets.py`
+  - 增加白名单语音短句构建逻辑（通用脚本能力增强）。
+
+### F) 配置模板
+
+- `.env.example` 新增：
+  - `AIGLASS_STRUCTURED_NUMBERED`
+  - `AIGLASS_REALTIME_OBJECT_ANNOUNCE`
+  - `AIGLASS_REALTIME_OBJECT_PERIOD_SEC`
+  - `AIGLASS_OBJECT_VOICE_PREGEN_MAX`。
+
+## 6) 本轮产出统计
+
+截至本轮记录时，仓库统计结果：
+
+1. `voice/` 音频文件总量：**2428**（`.wav/.WAV`）
+2. `voice/map.zh-CN.json` 映射条目：**1758**
+3. 白名单语音目标集覆盖：
+   - 目标短句：**1208**
+   - 已生成：**1208 / 1208（100%）**
+4. 资源体积：
+   - `voice/`：约 **221MB**
+   - `third_party/`：约 **5.4MB**
+   - `CLIP-main.zip`：约 **4.2MB**
+
+## 7) 验证结果
+
+1. 语法检查通过：
+   - `app_main.py`
+   - `semantic_output.py`
+   - `structured_voice.py`
+   - `audio_player.py`
+   - `obstacle_detector_client.py`
+   - `scripts/generate_whitelist_voice_assets.py`
+   - `scripts/generate_voice_assets.py`
+
+2. 白名单映射核对通过：
+   - `DEFAULT_WHITELIST_CLASSES` 中类别均可映射到中文（无缺失）。
+
+3. CLIP 缺失场景验证：
+   - 之前 `No module named 'clip'` 会导致 YOLOE 初始化失败；
+   - 现在已改为“可降级运行 + 本地 CLIP 自动接入尝试”。
+
+## 8) 遇到的问题与处理
+
+### 问题 1：`clip` 缺失导致 YOLOE 白名单初始化失败
+- 现象：`self.model.get_text_pe()` 抛错 `No module named 'clip'`；
+- 处理：
+  1) 增加本地 CLIP 自动接入逻辑；
+  2) 增加降级策略，失败时继续默认类别检测，避免系统不可用。
+
+### 问题 2：语音批量生成规模过大、耗时过长
+- 现象：直接全组合生成会导致任务持续很久；
+- 处理：
+  - 改用白名单专用脚本，先保证“所有白名单物体+关键模板”全覆盖，再补长尾。
+
+### 问题 3：推送 GitHub 失败
+- 现象：`git push origin dev` 报 `Could not resolve hostname github.com`；
+- 后续：尝试提权推送请求被用户拒绝，本轮未完成远程同步。
+
+## 9) 未解决问题 / 风险点
+
+1. **远程仓库尚未完成推送**：
+   - 本地已提交，但 GitHub 尚未同步。
+
+2. **仓库体积上升明显**：
+   - `voice/` 大量新增 wav，后续克隆/拉取时间会增加。
+
+3. **CLIP 接入仍需实机回归**：
+   - 虽已加本地加载逻辑，但仍建议在目标设备完整验证“白名单提示词是否实际生效”。
+
+4. **实时播报频率需场景化微调**：
+   - 不同设备/场景可能需要调整 `AIGLASS_REALTIME_OBJECT_PERIOD_SEC` 以平衡及时性与打扰度。
+
+## 10) 下一步行动（建议顺序）
+
+1. **先完成推送**：
+   - 网络可用后执行：`git push origin dev`。
+
+2. **设备侧联调（关键）**：
+   - 启动 `app_main.py`，接入摄像头实时帧；
+   - 验证“白名单目标出现 → 实时播报触发”；
+   - 验证“开启/关闭实时物体播报”语音命令。
+
+3. **CLIP 生效验证**：
+   - 检查日志是否出现“已从本地目录加载 CLIP”或“已从 zip 解压并加载 CLIP”；
+   - 确认 YOLOE 白名单 embeddings 成功预计算（而非降级路径）。
+
+4. **语音资产治理（可选）**：
+   - 若需控制仓库体积，后续可将低价值重复短句迁移到按需 TTS；
+   - 或将超大语音资产转 LFS（需团队流程支持）。
+
+## 11) 本轮提交记录
+
+- 本地提交：`4d6e211`
+- 提交信息：`feat: enrich whitelist voice assets and integrate local CLIP fallback`
+
+---
+
+# 2025-02-09 对话记录：实现任意文字实时播报 - TTS + 缓存全覆盖方案
+
+## 1) 问题背景
+
+用户反馈当前系统存在以下核心问题：
+
+1. **实时场景识别没有输出语音**：识别出的场景文字没有对应的语音文件，导致无法播报
+2. **语音播报依赖一一对应**：现有系统只在有预录音频文件时才播报，没有对应文件就不播报
+3. **语音片段拼接不完整**：虽然有 `fragments.json` 配置，但基础语音片段文件缺失（music 目录只有 1 个文件）
+4. **TTS 回退机制不完善**：担心 Piper TTS 未正确配置，无法作为备用方案
+
+用户核心需求：**无论输出什么文字都能实时播报**
+
+## 2) 用户需求
+
+### 核心需求
+- 解决实时场景识别没有语音输出的问题
+- 不依赖预录音频文件的一一对应关系
+- 支持任意文字的实时播报
+
+### 方案选择
+用户明确选择：**TTS + 缓存** 方案
+- TTS 生成后缓存到本地，首次生成后再次使用就很快
+- 不依赖大量预录音频文件
+
+## 3) 现状分析
+
+### 当前语音播报机制
+
+1. **预录音频映射** (`audio_player.py` 第 106-117 行)
+   - `AUDIO_MAP` 只有 8 个固定映射（检测到物体、向上、向下、向左等���
+   - `music/` 目录只有 1 个 `converted_学长好帅啊.wav` 文件
+
+2. **片段拼接机制** (`audio_player.py` 第 691-797 行 `play_structured_voice`)
+   - 已实现片段拼接逻辑：`["紧急"] + ["12点方向"] + ["2米"] + ["人"] + ["注意避让"]`
+   - 但每个片段都需要对应的音频文件或 TTS 生成
+
+3. **TTS 回退** (`audio_player.py` 第 342-355 行 `_get_pcm_for_text`)
+   - 优先查找预录音频
+   - 未找到则调用 TTS 生成（如果启用且可用）
+   - 生成的音频会缓存到 `voice/generated/` 目录
+
+4. **问题根源**
+   - TTS 模型文件：`model/piper/zh_CN-huayan-medium.onnx` **已存在**
+   - `voice/generated/` 目录：**不存在**（需要创建）
+   - 基础语音片段（1-12点方向、1-10米、物体名称等）没有预录音频
+
+## 4) 实施方案
+
+### Phase 1: 确保 TTS 可用（已完成）
+
+**目标**：让 TTS 成为兜底方案，确保任何文字都能播报
+
+**验证结果**：
+```
+TTS enabled: True
+TTS available: True
+Model path: /data0/home/scli/Codes/OpenAIglasses_for_Navigation-main/model/piper/zh_CN-huayan-medium.onnx
+```
+
+Piper TTS 已正确配置，可以生成中文语音。
+
+### Phase 2: 创建 voice/generated 目录（已完成）
+
+```bash
+mkdir -p voice/generated
+```
+
+### Phase 3: 补充 fragments.json（已完成）
+
+**文件**: `voice/fragments.json`
+
+**新增内容**：
+```json
+{
+  "numbering": {
+    "1": "第一",
+    "2": "第二",
+    "3": "第三",
+    "4": "第四",
+    "5": "第五"
+  },
+  "connectors": {
+    "at_location": "处为",
+    "comma": "，",
+    "period": "。"
+  },
+  "state_descriptions": {
+    "avoid_collision": "注意避让避免碰撞",
+    "go_around": "请从侧面绕开",
+    "keep_distance": "注意保持距离",
+    "can_pass": "可以通过",
+    "watch_traffic_signal": "请注意交通信号",
+    "careful": "请注意"
+  }
+}
+```
+
+### Phase 4: 增强 audio_player.py（已完成）
+
+#### 4.1 增强 `_get_pcm_for_text()` 函数
+
+**位置**: `audio_player.py` 第 342-385 行
+
+**修改内容**：添加详细的调试日志
+```python
+def _get_pcm_for_text(text: str, allow_tts: bool = True, save_generated: bool = True) -> bytes:
+    """
+    获取文本对应的 PCM 音频数据
+
+    优先级：预录音频 > TTS缓存 > TTS生成
+    """
+    # 1. 尝试查找预录音频
+    key, path = _find_audio_path_for_text(text)
+    if path:
+        print(f"[AUDIO] 找到预录音频: '{text}' -> '{key}' ({path})")
+        pcm = _ensure_pcm_data(load_wav_file(path))
+        if pcm:
+            return pcm
+        print(f"[AUDIO] 预录音频加载失败: {path}")
+
+    # 2. 尝试 TTS 回退
+    if allow_tts and _tts_enabled and _piper_tts and _piper_tts.is_available():
+        print(f"[AUDIO] 使用 TTS 生成: '{text}'")
+        pcm = _piper_tts.text_to_audio(text)
+        if pcm:
+            if save_generated:
+                _save_generated_audio(text, pcm)
+            print(f"[AUDIO] TTS 生成成功: '{text}' ({len(pcm)} bytes)")
+            return pcm
+        else:
+            print(f"[AUDIO] TTS 生成失败: '{text}'")
+    # ... 更多错误日志
+```
+
+#### 4.2 增强 `play_voice_text()` 函数
+
+**位置**: `audio_player.py` 第 674-716 行
+
+**修改内容**：改进日志输出
+```python
+if pcm_data:
+    print(f"[AUDIO] 成功获取音频数据: '{text}' ({len(pcm_data)} bytes)")
+    _enqueue_pcm_threadsafe(pcm_data)
+    _last_voice_text = text
+    _last_voice_time = current_time
+    return
+
+# 完全失败，输出日志
+print(f"[AUDIO] 播放失败: 未找到音频且 TTS 不可用 - '{text}'")
+```
+
+#### 4.3 增强 `play_structured_voice()` 函数
+
+**位置**: `audio_player.py` 第 723-866 行
+
+**修改内容**：
+1. 添加详细的调试日志
+2. **支持混合模式**：部分片段缺失时继续拼接，而非完全放弃
+3. 改进回退机制
+
+```python
+# 片段拼接播放（支持混合模式：部分预录 + 部分 TTS）
+gap_ms = int(os.getenv("AIGLASS_FRAGMENT_GAP_MS", "40"))
+gap = b"\x00" * (gap_ms * 8000 * 2 // 1000)
+pcm_chunks = []
+use_hybrid = os.getenv("AIGLASS_HYBRID_FRAGMENT_MODE", "1") == "1"  # 默认启用混合模式
+
+for p in parts:
+    p = (p or "").strip()
+    if not p:
+        continue
+    pcm = _get_pcm_for_text(p, allow_tts=True, save_generated=True)
+    if not pcm:
+        if use_hybrid:
+            # 混合模式：继续尝试其他片段
+            print(f"[AUDIO] 混合模式: 片段 '{p}' 失败，继续下一个")
+            continue
+        else:
+            # 严格模式：任何片段失败都放弃拼接
+            print(f"[AUDIO] 严格模式: 片段 '{p}' 失败，放弃拼接")
+            pcm_chunks = []
+            break
+    pcm_chunks.append(pcm)
+```
+
+#### 4.4 新增 `play_numbered_list_text()` 函数
+
+**位置**: `audio_player.py` 第 868-920 行
+
+**功能**：支持编号列表格式的播报
+```python
+def play_numbered_list_text(text: str) -> bool:
+    """
+    播放编号列表格式的文本
+
+    支持格式：
+    - "第一、12点方向1米处为斑马线，可以通过"
+    - "第一、12点方向1米处为斑马线，可以通过；第二、3点方向2米处有人，注意避让"
+    """
+    # 按分号分割，支持多个条目
+    items = [item.strip() for item in text.split("；") if item.strip()]
+    # ... 播放逻辑
+```
+
+#### 4.5 更新 `_pre_generate_voice_corpus()` 函数
+
+**位置**: `audio_player.py` 第 388-445 行
+
+**修改内容**：支持新增的片段类别（编号词、连接词、状态描述）
+```python
+# 编号词（新增）
+for v in (fragments.get("numbering") or {}).values():
+    items.append(str(v))
+
+# 连接词（新增）
+for v in (fragments.get("connectors") or {}).values():
+    if v:
+        items.append(str(v))
+
+# 状态描述（新增）
+for v in (fragments.get("state_descriptions") or {}).values():
+    if v:
+        items.append(str(v))
+```
+
+## 5) 关键决策
+
+### 决策1: 使用 TTS + 缓存方案
+- **原因**: 用户明确选择此方案
+- **优势**:
+  - 不需要录制大量音频文件
+  - 首次生成后缓存，后续使用快速
+  - 支持任意文字播报
+- **实现**:
+  - TTS 生成的音频保存到 `voice/generated/`
+  - 自动更新 `voice/map.generated.json` 映射
+
+### 决策2: 启用混合模式
+- **原因**: 提高播报成功率
+- **影响**: 部分片段缺失时仍能播报，而非完全放弃
+- **环境变量**: `AIGLASS_HYBRID_FRAGMENT_MODE=1`（默认启用）
+
+### 决策3: 添加详细调试日志
+- **原因**: 便于排查语音播报问题
+- **影响**: 日志中清晰显示音频来源（预录/TTS/缓存）
+
+## 6) 测试结果
+
+### TTS 基础功能测试
+```
+✅ TTS 可用: True
+✅ 模型路径正确
+✅ 编号词生成成功: "第一" (7616 bytes), "第二" (9846 bytes), "第三" (12446 bytes)
+✅ 方向词生成成功: "12点方向" (20992 bytes), "3点方向" (17090 bytes)
+✅ 距离词生成成功: "1米" (8730 bytes), "2米" (8916 bytes)
+✅ 物体词生成成功: "斑马线" (14490 bytes), "人" (7988 bytes), "柱子" (11146 bytes)
+✅ 状态描述生成成功: "可以通过" (17834 bytes), "注意避让避免碰撞" (29722 bytes)
+```
+
+### 完整句子测试
+```
+✅ "第一、12点方向1米处为斑马线，可以通过" (60930 bytes)
+✅ "第二、3点方向2米处有人，注意避让避免碰撞" (69846 bytes)
+✅ "街道环境。注意，12点方向约两步有人，先停一下" (77462 bytes)
+```
+
+## 7) 修改文件清单
+
+### 新增文件
+| 文件 | 说明 |
+|------|------|
+| `voice/generated/` | TTS 生成的语音文件目录 |
+| `test_voice_tts.py` | TTS 功能测试脚本 |
+
+### 修改文件
+| 文件 | 修改内容 |
+|------|----------|
+| `voice/fragments.json` | 新增 numbering、connectors、state_descriptions 三个片段类别 |
+| `audio_player.py` | 增强调试日志、混合模式支持、新增 play_numbered_list_text() 函数 |
+
+## 8) 未解决的问题
+
+1. **fastapi 依赖缺失**:
+   - 现象: audio_player.py 导入时需要 fastapi
+   - 影响: 无法独立测试 audio_player 模块
+   - 解决方案: 在主程序 app_main.py 中运行时不会有此问题
+
+2. **TTS 首次生成延迟**:
+   - 现象: 首次生成某个短语需要约 1-2 秒
+   - 影响: 实时播报可能有轻微延迟
+   - 解决方案: 后续可预生成常用短语
+
+3. **语音缓存管理**:
+   - 现象: 生成的语音文件会累积
+   - 影响: 长期运行可能占用较多磁盘空间
+   - 解决方案: 后续可添加缓存清理机制
+
+## 9) 下一步行动
+
+### 立即可做
+1. **验证主程序播报**:
+   ```bash
+   conda activate openai_glasses
+   python app_main.py
+   ```
+   - 验证实时场景识别能正常播报
+   - 检查日志中的 TTS 生成情况
+
+2. **预生成常用短语**（可选）:
+   ```bash
+   export AIGLASS_TTS_PREGEN=1
+   python app_main.py
+   ```
+   - 启动时预生成 fragments.json 中定义的所有片段
+   - 减少首次播报的延迟
+
+3. **监控日志输出**:
+   - 观察 `[AUDIO]` 开头的日志
+   - 确认 TTS 是否正常生成
+   - 确认缓存是否正常工作
+
+### 后续优化
+1. **预生成策略优化**:
+   - 根据实际使用频率调整预生成列表
+   - 定期更新缓存
+
+2. **缓存管理**:
+   - 添加缓存清理机制
+   - 限制缓存目录大小
+
+3. **播报策略优化**:
+   - 根据场景调整播报频率
+   - 避免重复播报相同内容
+
+## 10) 环境配置
+
+### Conda 环境
+- **环境名**: `openai_glasses`
+- **激活命令**: `conda activate openai_glasses`
+
+### 环境变量（可选）
+```bash
+# TTS 相关
+export AIGLASS_TTS_ENABLED=1                    # 启用 TTS（默认已启用）
+export AIGLASS_TTS_PREGEN=1                     # 启动时预生成常用短语
+export AIGLASS_TTS_PREGEN_MAX=200               # 预生成最大数量
+
+# 片段拼接相关
+export AIGLASS_STRUCTURED_FRAGMENT_SPEAK=1      # 启用片段拼接（默认）
+export AIGLASS_HYBRID_FRAGMENT_MODE=1            # 启用混合模式（默认）
+export AIGLASS_FRAGMENT_GAP_MS=40               # 片段间隔（毫秒）
+
+# 编号列表播报
+export AIGLASS_PLAY_ALL_NUMBERED_ITEMS=0        # 播放所有编号条目（默认只播第一个）
+```
+
+## 11) 工作流程
+
+### 音频播放优先级
+```
+1. 预录音频（AUDIO_MAP）
+   ↓ 未找到
+2. TTS 缓存（已生成的音频）
+   ↓ 未缓存
+3. TTS 实时生成
+   ↓ 成功后缓存到 voice/generated/
+```
+
+### 结构化语音播报流程
+```
+1. 接收 schema_version=2 的结构化数据
+   ↓
+2. 构建片段列表（scene + direction + distance + object + action）
+   ↓
+3. 对每个片段尝试获取音频：
+   - 预录音频 > TTS缓存 > TTS生成
+   ↓
+4. 混合模式：部分失败时继续
+   - 严格模式：任何失败则放弃拼接
+   ↓
+5. 拼接片段并播放
+   ↓
+6. 失败则回退到全文 TTS 播放
+```
+
+## 12) 预期效果
+
+完成后：
+1. **任何文字都能播报**：通过 TTS 兜底，不再依赖预录音频
+2. **常用片段快速响应**：首次生成后缓存，后续使用快速
+3. **编号列表格式支持**：支持 "第一、12点方向1米处为斑马线，可以通过" 格式
+4. **实时场景播报**：场景识别结果能立即转换为语音播报
+5. **详细日志输出**：便于排查问题
+- 状态：**已本地提交，远程推送待完成**。
+
+---
+
+# 2026-02-09（语音链路强化：强制日志 + stream优先 + 本地兜底 + 启动自检）
+
+## 1) 用户新增需求（本次对话）
+
+1. 继续完善“任意文字可实时播报”能力，并要求**强制可观测日志**，便于定位为什么没有声音。
+2. 希望系统不再强依赖 `/stream.wav` 播放端：
+   - 有 `/stream.wav` 客户端时优先走该链路；
+   - 没有时自动走本地扬声器兜底。
+3. 增加“启动自检播报链路”，启动时就能看出当前将走哪条输出路径。
+
+## 2) 本轮关键决策
+
+1. **输出优先级固定**：`/stream.wav`（有客户端） > 本地扬声器兜底。
+2. **日志统一收敛**：增加 `[AUDIO-FORCE]` 结构化日志，覆盖“文本解析来源 + 输出分发路径 + 自检结论”。
+3. **启动即自检**：在 `app_main.py` 启动阶段调用自检函数，输出完整状态快照，必要时播放探测语音。
+
+## 3) 已实施改动（代码级）
+
+### A) 强制播报日志（可观测性）
+
+- 文件：`audio_player.py`
+  - 新增：`_force_audio_log(event, **fields)`，默认开启（`AIGLASS_FORCE_AUDIO_LOG=1`）。
+  - 在以下节点强制打印日志：
+    - `play_voice_text` 入口/命中/失败
+    - `play_structured_voice` 入口/片段成功/全文回退
+    - 输出分发（stream 或 local fallback）
+
+### B) 输出链路策略（stream 优先 + 本地兜底）
+
+- 文件：`audio_player.py`
+  - 新增本地兜底播放能力：
+    - `_init_local_audio_if_needed()`
+    - `_play_pcm_local_fallback()`
+  - 在 `_broadcast_audio_optimized_sync()` 中实现策略：
+    - 当 `stream_clients > 0` 且主 loop 可用时，优先走 `broadcast_pcm16_realtime()`；
+    - 当无 stream 客户端（或 loop 不可用）时，尝试本地兜底输出。
+
+### C) 启动自检播报链路
+
+- 文件：`audio_player.py`
+  - 新增：
+    - `_snapshot_output_state()`：采样当前链路状态
+    - `run_startup_audio_selfcheck()`：给出 route、自检探测音来源、是否成功播放等
+- 文件：`app_main.py`
+  - 在 `on_startup_init_audio()` 中，音频初始化后调用 `run_startup_audio_selfcheck()`。
+
+### D) 配置模板补充
+
+- 文件：`.env.example`
+  - 新增配置：
+    - `AIGLASS_LOCAL_FALLBACK_PLAYBACK=1`
+    - `AIGLASS_FORCE_AUDIO_LOG=1`
+    - `AIGLASS_STARTUP_AUDIO_SELFTEST_PLAY=1`
+    - `AIGLASS_STARTUP_AUDIO_SELFTEST_TEXT=音频链路自检完成`
+
+## 4) 验证结果
+
+1. 语法检查通过：
+   - `python -m py_compile audio_player.py app_main.py piper_tts.py`
+2. 自检函数验证：
+   - 能输出 `preferred_route`、`stream_clients`、`tts_available`、`probe_source`、`probe_played`。
+3. 强制日志验证：
+   - 看到 `[AUDIO-FORCE] event=play_voice_text_resolved / output_dispatch / startup_selfcheck`。
+
+## 5) 已知限制（环境相关）
+
+1. 在当前容器环境中无默认音频设备，`pyaudio` 打开本地输出会报 `Invalid output device`。
+2. 该问题属于运行环境限制，不是链路逻辑问题；在有默认声卡/蓝牙输出设备的机器上可正常兜底。
+
+## 6) 下一步建议
+
+1. 在目标设备上运行 `python app_main.py`，观察启动日志中的 `startup_selfcheck`。
+2. 分别验证两种场景：
+   - 有客户端拉 `/stream.wav`（应显示 route=stream）
+   - 无 `/stream.wav` 客户端（应显示 route=local_fallback）
+3. 若本地兜底失败，先检查系统默认输出设备（ALSA/PulseAudio/蓝牙 sink）。

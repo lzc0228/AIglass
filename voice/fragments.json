@@ -177,5 +177,25 @@
     "indoor": "室内环境",
     "outdoor": "户外环境",
     "unknown": ""
+  },
+  "numbering": {
+    "1": "第一",
+    "2": "第二",
+    "3": "第三",
+    "4": "第四",
+    "5": "第五"
+  },
+  "connectors": {
+    "at_location": "处为",
+    "comma": "，",
+    "period": "。"
+  },
+  "state_descriptions": {
+    "avoid_collision": "注意避让避免碰撞",
+    "go_around": "请从侧面绕开",
+    "keep_distance": "注意保持距离",
+    "can_pass": "可以通过",
+    "watch_traffic_signal": "请注意交通信号",
+    "careful": "请注意"
   }
 }

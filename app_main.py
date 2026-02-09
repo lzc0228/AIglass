@@ -86,7 +86,13 @@ from asr_core import (
     set_current_recognition,
     stop_current_recognition,
 )
-from audio_player import initialize_audio_system, play_voice_text, play_structured_voice, warmup_voice_texts
+from audio_player import (
+    initialize_audio_system,
+    play_voice_text,
+    play_structured_voice,
+    warmup_voice_texts,
+    run_startup_audio_selfcheck,
+)
 from event_logger import get_event_logger
 
 # ---- 新功能模块 ----
@@ -2600,8 +2606,17 @@ async def on_startup_init_audio():
 
     threading.Thread(target=_init, daemon=True).start()
 
-    # 等待音频系统初始化，然后播放测试语音
+    # 等待音频系统初始化，然后执行启动自检与测试语音
     await asyncio.sleep(2)  # 等待初始化完成
+
+    try:
+        selfcheck = run_startup_audio_selfcheck(
+            play_probe=os.getenv("AIGLASS_STARTUP_AUDIO_SELFTEST_PLAY", "1") == "1",
+            probe_text=os.getenv("AIGLASS_STARTUP_AUDIO_SELFTEST_TEXT", "音频链路自检完成"),
+        )
+        print(f"[AUDIO] 启动自检详情: {selfcheck}")
+    except Exception as e:
+        print(f"[AUDIO] 启动自检失败: {e}")
 
     # 后台预热：为白名单物体准备预设语音（尽可能覆盖）
     _warmup_object_voice_assets_in_background()
