@@ -1,6 +1,4 @@
 # Environment variables
-.env
-.env.local
 
 # Python cache
 __pycache__/

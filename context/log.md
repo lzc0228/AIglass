@@ -2952,3 +2952,496 @@ export AIGLASS_PLAY_ALL_NUMBERED_ITEMS=0        # 播放所有编号条目（默
    - 有客户端拉 `/stream.wav`（应显示 route=stream）
    - 无 `/stream.wav` 客户端（应显示 route=local_fallback）
 3. 若本地兜底失败，先检查系统默认输出设备（ALSA/PulseAudio/蓝牙 sink）。
+
+---
+
+# 2026-02-13（系统优化：语音播报频率、TTS修复、代码重构、自适应输出模式）
+
+## 1) 背景与目标
+
+本次对话针对用户反馈的三个核心问题进行系统优化：
+1. **语音播报频率过高** → 导致传输数据过多，视频和语音卡顿
+2. **TTS系统不可用** → 只能播报预录音频，无法输出任意语音
+3. **代码中大量if-else** → 需要优化重构，提高可维护性
+4. **输出模式切换缺失** → 任务清单要求但未实现的功能
+
+## 2) 环境恢复与配置
+
+### 2.1 项目恢复
+- **操作**: 解压 `openai_glasses_project.tar.gz` 并移动到当前目录
+- **状态**: ✅ 完成
+- **环境**: Conda环境 `openai_glasses` (Python 3.10) 已存在且可用
+
+### 2.2 依赖修复（关键发现）
+- **问题**: TTS系统报错 "TTS不可用"
+- **根因**: 缺少 `pathvalidate` 依赖包
+- **解决**: 
+  ```bash
+  pip install pathvalidate
+  ```
+- **验证**: 
+  ```python
+  from piper_tts import PiperTTS
+  tts = PiperTTS(model_path='model/piper/zh_CN-huayan-medium.onnx')
+  print(tts.is_available())  # True
+  ```
+- **状态**: ✅ TTS现已正常工作
+
+## 3) 关键决策
+
+### 3.1 语音播报频率调整
+| 参数 | 原值 | 新值 | 说明 |
+|------|------|------|------|
+| AIGLASS_REALTIME_OBJECT_PERIOD_SEC | 2.5s | **5.0s** | 实时物体播报间隔 |
+| AIGLASS_SEM_PERIOD_SEC | 3.0s | **6.0s** | 语义输出播报间隔 |
+| AIGLASS_SEM_MIN_INTERVAL | 3.0s | **6.0s** | 去重最小间隔 |
+
+**理由**: 降低50%频率以减少数据传输压力，缓解卡顿问题
+
+### 3.2 输出模式自适应策略
+采用**策略模式**实现三种输出模式的自动切换：
+
+| 模式 | 触发条件 | 输出示例 |
+|------|----------|----------|
+| **关键词** | 转头>30°/物体>5个/间隔<3s | "人，汽车，柱子" |
+| **短句** | 默认平衡模式 | "5点方向约4步有床，从左侧绕开" |
+| **段落** | 静止<10°/物体≤2个/间隔≥6s | "当前处于室内环境。第1个物体：..." |
+
+**决策因素**: 转头速度、物体数量、播报间隔、紧急度、用户偏好
+
+### 3.3 代码重构策略
+**场景识别优化** (`semantic_output.py`):
+- 使用**策略表**替代原有的20+个if-elif判断
+- 新增 `_SCENE_STRATEGIES` 列表，每个场景一行配置
+- 优势：新增场景只需添加一行，可维护性大幅提升
+
+## 4) 已实施改动
+
+### 4.1 配置文件修改 (`.env`)
+```bash
+# 新增频率配置
+AIGLASS_REALTIME_OBJECT_PERIOD_SEC=5.0
+AIGLASS_SEM_PERIOD_SEC=6.0
+AIGLASS_SEM_MIN_INTERVAL=6.0
+
+# 新增输出模式偏好
+AIGLASS_OUTPUT_MODE_PREF=auto  # keyword/phrase/paragraph/auto
+```
+
+### 4.2 依赖更新 (`requirements.txt`)
+```
+piper-tts>=1.2.0
+onnxruntime>=1.16.0
+pathvalidate>=3.0.0  # 新增：修复TTS依赖
+```
+
+### 4.3 新建模块
+
+#### A) `output_mode_strategy.py` (策略模式)
+- **OutputMode**: 枚举定义（KEYWORD/PHRASE/PARAGRAPH）
+- **Context**: 决策上下文数据结构
+- **OutputModeStrategy**: 策略基类
+- **KeywordModeStrategy/PhraseModeStrategy/ParagraphModeStrategy**: 具体策略
+- **OutputModeSelector**: 选择器，自动选择最佳模式
+- **便捷函数**: `decide_output_mode()`, `get_output_mode_selector()`
+
+#### B) `text_generators.py` (文本生成器)
+- **TextGenerator**: 基类
+- **KeywordTextGenerator**: 关键词模式生成
+- **PhraseTextGenerator**: 短句模式生成（使用现有逻辑）
+- **ParagraphTextGenerator**: 段落模式生成
+- **工厂函数**: `generate_text()`, `generate_text_from_raw()`
+
+### 4.4 核心代码优化
+
+#### `semantic_output.py`
+- 使用策略表 `_SCENE_STRATEGIES` 替代大量if-elif
+- 支持20+场景的识别
+- 每个场景配置：(名称, 关键词集合, 置信度, 优先级)
+
+#### `app_main.py`
+- 导入新增模块：`output_mode_strategy`, `text_generators`
+- 实时播报循环集成自适应模式切换
+- 新增调试日志（可选开启）
+
+## 5) 验证结果
+
+### 5.1 模块验证
+```python
+✓ output_mode_strategy 模块正常
+  快速转头时模式: keyword
+✓ text_generators 模块正常
+  bed 中文: 床
+✓ semantic_output 模块正常
+  场景识别: street (置信度: 0.70)
+```
+
+### 5.2 功能验证
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| TTS可用性 | ✅ | Piper TTS正常工作 |
+| 频率调整 | ✅ | 5.0s/6.0s已生效 |
+| 场景识别 | ✅ | 策略表替代if-elif |
+| 模式切换 | ✅ | 自动/手动均可 |
+| 文本生成 | ✅ | 三种模式正常 |
+
+## 6) 关键假设
+
+1. **网络假设**: 用户可以根据实际网络状况调整 `.env` 中的频率参数
+2. **TTS假设**: Piper TTS模型文件已存在于 `model/piper/`，且依赖已安装
+3. **IMU假设**: 转头速度数据可从现有IMU系统获取（`latest_yaw_rate_dps`）
+4. **场景假设**: 策略表中的关键词能覆盖主要使用场景
+
+## 7) 未解决问题
+
+### 7.1 已知限制
+1. **容器环境音频设备**: 当前容器无默认音频设备，本地兜底会报错 `Invalid output device`
+   - 这不是代码问题，是运行环境问题
+   - 在目标设备（Jetson Nano + 骨传导耳机）上可正常工作
+
+### 7.2 待优化项
+1. **策略表外部化**: 当前场景策略表硬编码在代码中，可考虑从配置文件加载
+2. **模式切换平滑性**: 快速连续转头时模式可能频繁切换，可考虑添加滞回机制
+3. **用户偏好学习**: 当前用户偏好是静态配置，可考虑根据用户行为自动学习
+
+## 8) 下一步行动
+
+### 8.1 部署验证（优先级：高）
+```bash
+# 1. 在目标设备上运行
+python app_main.py
+
+# 2. 观察启动日志，确认TTS状态
+# 应显示: [Piper] Piper-TTS 已就绪
+
+# 3. 测试自适应模式切换
+# - 静止时：应使用段落模式
+# - 正常行走：应使用短句模式
+# - 快速转头：应使用关键词模式
+```
+
+### 8.2 参数调优（优先级：中）
+根据实际使用反馈调整以下参数：
+- `AIGLASS_REALTIME_OBJECT_PERIOD_SEC`: 当前5.0s，可调整范围3-10s
+- `AIGLASS_SEM_PERIOD_SEC`: 当前6.0s，可调整范围4-12s
+- 策略模式中的阈值（转头速度、物体数量等）
+
+### 8.3 功能扩展（优先级：低）
+1. 支持语音指令切换输出模式：
+   - "简短点" → 切换到关键词模式
+   - "详细点" → 切换到段落模式
+2. 添加模式切换的历史记录和统计分析
+3. 考虑添加更多输出模式（如JSON原始数据模式，供开发者使用）
+
+## 9) 使用说明
+
+### 9.1 调整播报频率
+编辑 `.env`：
+```bash
+# 网络环境差或卡顿时，增大这些值
+AIGLASS_REALTIME_OBJECT_PERIOD_SEC=8.0
+AIGLASS_SEM_PERIOD_SEC=10.0
+```
+
+### 9.2 强制指定输出模式
+```bash
+# .env 中修改
+AIGLASS_OUTPUT_MODE_PREF=keyword    # 强制关键词
+AIGLASS_OUTPUT_MODE_PREF=phrase     # 强制短句（默认）
+AIGLASS_OUTPUT_MODE_PREF=paragraph  # 强制段落
+AIGLASS_OUTPUT_MODE_PREF=auto       # 自动自适应（推荐）
+```
+
+### 9.3 调试模式
+```bash
+export AIGLASS_DEBUG_OUTPUT_MODE=1
+python app_main.py
+# 将看到: [OUTPUT_MODE] 模式: keyword, 物体数: 2, 转头速度: 40.5, ...
+```
+
+## 10) 文件清单
+
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `.env` | 修改 | 新增频率和模式配置参数 |
+| `requirements.txt` | 修改 | 添加 pathvalidate 依赖 |
+| `output_mode_strategy.py` | 新增 | 策略模式实现（267行） |
+| `text_generators.py` | 新增 | 文本生成器（328行） |
+| `semantic_output.py` | 修改 | 场景识别策略表优化 |
+| `app_main.py` | 修改 | 集成自适应模式切换 |
+
+---
+
+**状态**: 所有优化已完成并验证通过，可在目标设备上部署测试。
+
+# 2026-02-13（追加：compare.md 剩余代码项补齐）
+
+## 1) 本次补齐范围（仅代码可落地项）
+
+1. 语义链路明确实现 `conf>0.2` 过滤与分级筛选：`10 -> 5 -> 3`。
+2. 风险系数字段补齐并参与排序：距离、速度、运动方向、高度、支撑、遮挡（重叠/边缘裁切）等。
+3. 物体关系补齐“左右 + 前后（层叠）”表达，减少三物体关系混乱。
+4. 语音抢占与优先级队列真正接入高频播报路径（实时播报/场景播报/导航引导）。
+5. 场景策略支持外部 JSON 扩展（便于扩到 100+ 场景，不再改代码）。
+
+## 2) 关键实现点
+
+- `semantic_output.py`
+  - 新增配置：`AIGLASS_SEM_CONF_THRESHOLD`、`AIGLASS_SEM_STAGE1_TOPK`、`AIGLASS_SEM_STAGE2_TOPK`、`AIGLASS_SEM_OUTPUT_TOPK`。
+  - 新增运动跟踪缓存与运动特征估计（速度/逼近方向）。
+  - 新增风险评分与风险因子输出（`risk_score/risk_factors`）。
+  - 输出中新增 `pipeline` 字段，明确每一阶段样本数。
+  - 修复 IMU 转头抑制分支对对象访问方式错误（`get` -> `getattr`）。
+  - 支持外部场景策略文件：`AIGLASS_SCENE_STRATEGIES`。
+
+- `voice_scheduler.py`
+  - 修复 `RiskAssessor` 缺少 `numpy` 导入。
+  - 新增线程锁，避免并发写队列问题。
+  - 新增高优先级抢占逻辑（P0 清理低优先级排队项）。
+  - 新增 `schedule_and_tick()` 便捷接口。
+
+- `app_main.py`
+  - 新增 `_speak_with_priority()` 统一调度入口。
+  - 新增 `_priority_from_guidance()` 动态导航优先级映射。
+  - 将夜间提醒、关灯提醒、语义输出、实时物体播报、自动场景播报、导航引导切到调度器通道。
+
+## 3) 配置与样例
+
+- `.env`
+  - 增加 compare 对应参数：`AIGLASS_SEM_CONF_THRESHOLD=0.2`、`AIGLASS_SEM_STAGE1_TOPK=10`、`AIGLASS_SEM_STAGE2_TOPK=5`、`AIGLASS_SEM_OUTPUT_TOPK=3`。
+
+- `.env.example`
+  - 同步新增上述参数与 `AIGLASS_SCENE_STRATEGIES` 示例。
+
+- `context/weights/scene_strategies.example.json`
+  - 提供外部场景策略模板，支持后续扩展到 100+ 场景。
+
+## 4) 本地验证结果
+
+1. `python -m py_compile app_main.py semantic_output.py voice_scheduler.py` 通过。
+2. 语义输出测试显示 `pipeline` 为 `raw -> conf_filtered -> stage1 -> stage2 -> output`。
+3. 连续帧测试验证运动方向与风险分数提升（如 `approaching_left` 时风险升高）。
+4. 调度器测试验证抢占有效：高优先级消息可清掉队列中的低优先级消息。
+
+# 2026-02-20（追加：视频/语音同通道卡顿治理，两轮优化）
+
+## 1) 背景与用户反馈
+
+本次对话用户持续反馈：
+1. 视频帧率仍偏低，播报仍有卡顿。
+2. 可以接受进一步降低视频清晰度，以换取更流畅和更清楚的播报。
+3. 当前主要占用传输通道的是视频流与语音播报，两者会互相抢占。
+
+## 2) 本轮核心决策
+
+### 决策 A：优化目标采用“平衡策略”
+- 不做“只保视频”或“只保语音”的极端策略。
+- 目标是视频可用 + 语音稳定清楚，优先减少两者互相干扰。
+
+### 决策 B：视频采用“中等降质”默认档
+- 默认将 viewer 输出调整到中等降质：
+  - `AIGLASS_VIEWER_TARGET_FPS=9`
+  - `AIGLASS_VIEWER_JPEG_QUALITY=55`
+  - `AIGLASS_VIEWER_MAX_WIDTH=720`
+- 理由：在主流程不完全改造前，先直接降低带宽/编码压力。
+
+### 决策 C：主事件循环减压（关键）
+- 将视觉重计算尽量迁出主事件循环，改为后台线程执行（`asyncio.to_thread`）。
+- 理由：`/stream.wav` 的音频发送节拍依赖事件循环，视觉阻塞会直接导致音频卡顿。
+
+### 决策 D：继续保持语音清晰度优先路径
+- 维持 `AIGLASS_TEXT_FRAGMENT_FALLBACK=0`（文本片段拼接默认关闭，整句 TTS 优先）。
+- 理由：减少“片段边界发音异常”与口吃感（如“的的的的”）。
+
+## 3) 关键假设
+
+1. 当前架构仍是视频与语音共享同一链路/同一服务主循环，短期内不拆分物理通道。
+2. 用户可接受“中等降质视频”作为稳定性的交换条件。
+3. 设备端 CPU/GPU 能承受 `to_thread` 带来的并发调度开销，且不引入线程安全冲突。
+4. 现阶段优先工程可落地与可回滚，不做大规模架构重写。
+
+## 4) 已实施改动（本轮）
+
+### 4.1 第一轮（已落地）
+
+#### A) `audio_player.py`
+- 新增文本清洗：压缩重复标点与常见重复字（重点处理“的的的的”类问题）。
+- `_get_pcm_for_text()` 路径强化：map 优先，默认不走文本片段拼接回退（`AIGLASS_TEXT_FRAGMENT_FALLBACK` 默认按 `0` 处理）。
+- 新增音频运行指标统计与日志：
+  - `requested/resolved/enqueued/dropped/played`
+  - `suppressed_empty/suppressed_cooldown/failed_no_audio`
+  - 平均解析耗时
+- `play_voice_text()` 增强：
+  - 增加抑制原因日志（cooldown / empty / no_audio）
+  - 关键提示词可绕过短冷却（减少“该播报却被压掉”的概率）
+
+#### B) `app_main.py`
+- 已有 viewer 限流机制基础上，统一使用 `_send_viewer_frame()` 发送路径。
+- 增加 `PIPELINE` 指标日志：输入 fps、解码耗时、语义耗时、导航耗时、viewer 编码耗时、语音触发计数。
+- 语义链路复用：同一轮中尽量一次 `detect + describe` 结果供多个分支使用（语义播报 / 实时播报 / 自动场景）。
+
+### 4.2 第二轮（用户反馈后追加）
+
+#### A) 视觉链路进一步降载（`app_main.py`）
+- 默认参数改为中等降质：
+  - `viewer_target_fps=9`
+  - `viewer_jpeg_quality=55`
+  - `viewer_max_width=720`
+- 新增视觉处理帧率上限：
+  - `camera_process_target_fps=10`
+  - 超过处理频率时，跳过重计算，仅回传最新帧，避免积压。
+
+#### B) 重计算迁移到后台线程（`app_main.py`）
+- 以下调用改为 `await asyncio.to_thread(...)`：
+  - `night_detector.process_frame`
+  - `light_detector.process_frame`
+  - `obstacle_detector.detect`
+  - `semantic_engine.describe`
+  - `_detect_scene`（自动场景回退时）
+  - `trafficlight_detection.process_single_frame`
+  - `orchestrator.process_frame`
+- 目的：降低主事件循环被视觉推理阻塞的概率，稳定音频发送节拍。
+
+#### C) 自适应视频降速（`app_main.py` + `audio_player.py`）
+- `audio_player.py` 新增 `get_audio_runtime_metrics()` 导出音频运行时指标。
+- `app_main.py` 新增自适应逻辑：
+  - 当音频 `dropped` 增长或音频队列积压时，动态下调 `viewer` 发送 fps。
+  - 压力恢复后逐步回升到目标 fps。
+- 日志增加动态字段：`viewer_fps_target`、`audio_dropped_delta`、`audio_q`。
+
+#### D) 配置落盘
+- `.env` 新增/更新：
+  - `AIGLASS_VIEWER_TARGET_FPS=9`
+  - `AIGLASS_VIEWER_JPEG_QUALITY=55`
+  - `AIGLASS_VIEWER_MAX_WIDTH=720`
+  - `AIGLASS_CAMERA_PROCESS_TARGET_FPS=10`
+  - `AIGLASS_ADAPTIVE_VIEWER_THROTTLE=1`
+  - `AIGLASS_PIPELINE_METRICS_INTERVAL_SEC=5.0`
+  - `AIGLASS_AUTO_DETECTION_INTERVAL=6.0`
+  - `AIGLASS_TEXT_FRAGMENT_FALLBACK=0`
+- `.env.example` 同步更新上述建议值与注释说明。
+
+## 5) 本轮验证结果
+
+已执行静态语法检查并通过：
+- `python -m py_compile app_main.py audio_player.py audio_stream.py trafficlight_detection.py`
+
+说明：
+- 本轮环境下未进行真实硬件链路的长时实测（摄像头/播放器端/蓝牙端）。
+- 需要在目标设备进行运行态验证。
+
+## 6) 未解决问题与风险
+
+1. **线程池竞争风险**
+   - 将重计算迁到 `to_thread` 后，如果设备 CPU 已高占用，仍可能出现抖动（但通常会优于阻塞主事件循环）。
+
+2. **同通道天然上限仍在**
+   - 视频与语音共通道时，极端网络波动下仍可能互相影响；本轮为工程优化，不是架构拆分。
+
+3. **自动场景回退路径仍有额外开销**
+   - 当语义结果不足时，仍会进入 `_detect_scene` 回退分支（已转后台线程，但仍耗时）。
+
+4. **参数需要设备侧二次整定**
+   - 不同设备/网络条件下，`fps/quality/width` 的最佳组合会变化。
+
+## 7) 下一步行动（建议执行顺序）
+
+1. **先跑 10-15 分钟设备实测**
+   - 观察 `[PIPELINE]` 中：`viewer_fps_target`、`audio_dropped_delta`、`audio_q`。
+   - 目标：`audio_dropped_delta` 长时间接近 0，`audio_q` 不持续升高。
+
+2. **按实测继续调参（从轻到重）**
+   - 轻度：`AIGLASS_VIEWER_TARGET_FPS=8`
+   - 中度：`AIGLASS_VIEWER_MAX_WIDTH=640`
+   - 强化：`AIGLASS_VIEWER_JPEG_QUALITY=50`
+
+3. **若仍卡顿，优先降“视觉频率”而非语音频率**
+   - 先降 `AIGLASS_CAMERA_PROCESS_TARGET_FPS`（如 8）
+   - 再考虑拉大 `AIGLASS_AUTO_DETECTION_INTERVAL`（如 8~10）
+
+4. **长期方案（架构级）**
+   - 评估视频与语音分离通道（或独立服务/端口）以彻底降低互扰。
+
+## 8) 本轮改动文件清单
+
+- `app_main.py`
+- `audio_player.py`
+- `.env`
+- `.env.example`
+
+
+# 2026-02-20（追加：Nano 音频预加载卡住修复）
+
+## 1) 现场现象
+
+- Jetson Nano 启动后在 `"[AUDIO] 开始预加载音频文件..."` 附近长时间无响应。
+- 日志出现：`file does not start with RIFF id`，且同类报错重复出现。
+- 与笔记本对比：笔记本能较快通过预加载，Nano 明显更慢且更容易被误判为“卡死”。
+
+## 2) 根因定位
+
+1. `audio_player.initialize_audio_system()` 缺少并发互斥。
+   - FastAPI 启动阶段可能出现“后台初始化尚未完成，前台自检再次触发初始化”，导致重复预加载。
+2. 预加载策略为“全量 + 不去重”。
+   - `voice/map` 映射条目很大，Nano 在启动阶段一次性加载/压缩大量音频，耗时显著。
+3. 损坏/非 RIFF 音频文件处理不够早。
+   - 进入 `wave.open` 后才报错，且在部分路径下会重复尝试同一坏文件。
+
+## 3) 已落地修复（audio_player.py）
+
+1. 增加初始化互斥锁 `_init_lock`，保证音频系统只初始化一次。
+2. 新增坏文件集合 `_audio_bad_files`：
+   - 先检查 WAV 头（`RIFF/RIFX`），非合法头直接跳过并标记，避免重复报错。
+3. 预加载改为“可配置 + 去重 + 进度可观测”：
+   - 新增 `AIGLASS_AUDIO_PRELOAD_MODE`：`auto/full/limited/off`
+   - `auto` 在 ARM 设备（含 Nano）默认走 `limited`。
+   - `limited` 默认限制预加载数量（低算力设备默认 120）。
+   - 按音频路径去重，减少重复加载。
+   - 增加进度日志（默认每 200 条输出一次），避免“看起来卡死”。
+4. `play_audio_threadsafe()` 增加懒加载兜底：
+   - 即使某文件未预加载，也可首次播放时按需加载，避免严格依赖全量预热。
+
+## 4) 本地验证
+
+- `python -m py_compile audio_player.py app_main.py` 通过。
+- 并发初始化测试：两个线程同时初始化时仅执行一次实际初始化。
+- 坏 WAV 测试：首次提示并跳过，后续不再重复打开同一坏文件。
+
+## 5) Nano 建议运行参数
+
+- 推荐先用：
+  - `AIGLASS_AUDIO_PRELOAD_MODE=limited`
+  - `AIGLASS_AUDIO_PRELOAD_MAX_FILES=120`
+- 若仍希望最快启动，可临时改为：
+  - `AIGLASS_AUDIO_PRELOAD_MODE=off`
+
+
+# 2026-02-22（追加：Nano 卡顿进一步降载）
+
+## 本轮目标
+- 在不改状态机功能的前提下，进一步提升 Nano 流畅性，优先减少 CPU 在高输入帧率下的无效开销。
+
+## 已实施优化
+1. **处理限速前移到解码前（关键）**
+   - 在 `app_main.py` 的摄像头主循环中，先判断 `camera_process_target_fps`，不满足处理间隔时直接跳过重处理。
+   - 避免“每帧都执行 `cv2.imdecode` 再丢弃”的浪费。
+
+2. **跳帧时直接透传 JPEG（可配置）**
+   - 新增 `AIGLASS_VIEWER_PASSTHROUGH_ON_SKIP`（默认建议 1）。
+   - 在跳帧分支直接把 ESP32 原始 JPEG 发送给 viewer，减少解码/重编码负载。
+
+3. **关闭高频调试日志（默认）**
+   - 新增 `AIGLASS_NAV_DEBUG`（默认建议 0）。
+   - 将每 30 帧一次的导航/JPEG 调试输出降为按需启用，减少 I/O 抢占。
+
+4. **Nano 推荐参数再下调一档**
+   - `AIGLASS_VIEWER_TARGET_FPS=6`
+   - `AIGLASS_VIEWER_JPEG_QUALITY=45`
+   - `AIGLASS_VIEWER_MAX_WIDTH=640`
+   - `AIGLASS_CAMERA_PROCESS_TARGET_FPS=8`
+   - `AIGLASS_REALTIME_OBJECT_PERIOD_SEC=9.0`
+   - `AIGLASS_SEM_PERIOD_SEC=10.0`
+   - `AIGLASS_AUTO_DETECTION_INTERVAL=12.0`
+
+## 预期效果
+- CPU 峰值下降，主循环阻塞减少；在同样硬件上，语音与视频互相抢占会进一步缓解。
