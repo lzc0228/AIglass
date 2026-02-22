@@ -126,12 +126,45 @@ def _iou(a: List[float], b: List[float]) -> float:
 
 
 def _clock_dir(cx: float, cy: float, w: int, h: int) -> int:
-    # 12 点方向为图像上方，顺时针
-    dx = cx - (w / 2.0)
-    dy = cy - (h / 2.0)
-    ang = math.atan2(dx, -dy)  # 以“向上”为 0，顺时针为正
-    hour = int(round((ang / (2 * math.pi)) * 12)) % 12
-    return 12 if hour == 0 else hour
+    # 优先使用 structured_voice 的统一映射（默认 front_arc：10/11/12/1/2）
+    if STRUCTURED_VOICE_AVAILABLE:
+        try:
+            return int(calculate_clock_dir(cx, cy, w, h))
+        except Exception:
+            pass
+
+    # fallback：保留与 structured_voice 一致的默认前视扇区映射
+    mode = os.getenv("AIGLASS_CLOCK_MAPPING", "front_arc").strip().lower()
+    if mode in ("full_360", "full360", "full", "legacy", "polar"):
+        dx = cx - (w / 2.0)
+        dy = cy - (h / 2.0)
+        ang = math.atan2(dx, -dy)
+        hour = int(round((ang / (2 * math.pi)) * 12)) % 12
+        return 12 if hour == 0 else hour
+
+    hours: List[int] = []
+    for token in str(os.getenv("AIGLASS_FRONT_CLOCK_HOURS", "10,11,12,1,2")).split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            v = int(token)
+        except Exception:
+            continue
+        if 1 <= v <= 12:
+            hours.append(v)
+    if len(hours) < 2:
+        hours = [10, 11, 12, 1, 2]
+
+    x_ratio = float(cx) / max(1.0, float(w))
+    x_ratio = max(0.0, min(1.0, x_ratio))
+    if os.getenv("AIGLASS_CLOCK_FLIP_LR", "0") == "1":
+        x_ratio = 1.0 - x_ratio
+
+    idx = int(x_ratio * len(hours))
+    if idx >= len(hours):
+        idx = len(hours) - 1
+    return int(hours[idx])
 
 
 def _dir_zh(hour: int) -> str:

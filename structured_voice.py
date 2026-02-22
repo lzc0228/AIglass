@@ -458,13 +458,55 @@ class VoiceTemplate:
 
 # ==================== 工具函数 ====================
 
+def _parse_front_clock_hours(raw: str) -> List[int]:
+    out: List[int] = []
+    for token in str(raw or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            v = int(token)
+        except Exception:
+            continue
+        if 1 <= v <= 12:
+            out.append(v)
+    return out
+
+
 def calculate_clock_dir(cx: float, cy: float, w: int, h: int) -> int:
-    """计算钟点方向（12点为上方，顺时针）"""
-    dx = cx - (w / 2.0)
-    dy = cy - (h / 2.0)
-    ang = math.atan2(dx, -dy)  # 以"向上"为 0，顺时针为正
-    hour = int(round((ang / (2 * math.pi)) * 12)) % 12
-    return 12 if hour == 0 else hour
+    """
+    计算钟点方向。
+
+    默认使用“前视扇区映射”（front_arc）：
+    - 只根据水平方向映射，避免把画面下方误解为 5/6/7 点（相机无法看到身后）
+    - 默认输出范围：10/11/12/1/2
+
+    可通过环境变量切换到历史 360 映射：
+    - AIGLASS_CLOCK_MAPPING=full_360
+    """
+    mode = os.getenv("AIGLASS_CLOCK_MAPPING", "front_arc").strip().lower()
+    if mode in ("full_360", "full360", "full", "legacy", "polar"):
+        dx = cx - (w / 2.0)
+        dy = cy - (h / 2.0)
+        ang = math.atan2(dx, -dy)  # 以"向上"为 0，顺时针为正
+        hour = int(round((ang / (2 * math.pi)) * 12)) % 12
+        return 12 if hour == 0 else hour
+
+    hours = _parse_front_clock_hours(os.getenv("AIGLASS_FRONT_CLOCK_HOURS", "10,11,12,1,2"))
+    if len(hours) < 2:
+        hours = [10, 11, 12, 1, 2]
+
+    x_ratio = float(cx) / max(1.0, float(w))
+    x_ratio = max(0.0, min(1.0, x_ratio))
+
+    # 某些前置相机或推流链路会左右镜像，提供可选矫正开关
+    if os.getenv("AIGLASS_CLOCK_FLIP_LR", "0") == "1":
+        x_ratio = 1.0 - x_ratio
+
+    idx = int(x_ratio * len(hours))
+    if idx >= len(hours):
+        idx = len(hours) - 1
+    return int(hours[idx])
 
 
 def calculate_lr_dir(cx: float, w: int) -> str:
