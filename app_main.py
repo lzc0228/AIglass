@@ -161,13 +161,16 @@ UDP_IP   = "0.0.0.0"
 UDP_PORT = 12345
 
 app = FastAPI()
+_STATIC_DIR = os.path.join(_REPO_DIR, "static")
+_TEMPLATES_DIR = os.path.join(_REPO_DIR, "templates")
+_INDEX_HTML_PATH = os.path.join(_TEMPLATES_DIR, "index.html")
 
 # ====== 状态与容器 ======
 # 静态文件服务（如果 static 目录存在）
-if os.path.exists("static"):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
+if os.path.exists(_STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 else:
-    print("[WARNING] static/ 目录不存在，Web UI 功能将不可用")
+    print(f"[WARNING] static/ 目录不存在，Web UI 功能将不可用: {_STATIC_DIR}")
 
 ui_clients: Dict[int, WebSocket] = {}
 current_partial: str = ""
@@ -1594,7 +1597,7 @@ async def start_ai_with_text(user_text: str):
 # ---------- 页面 / 健康 ----------
 @app.get("/", response_class=HTMLResponse)
 def root():
-    with open(os.path.join("templates", "index.html"), "r", encoding="utf-8") as f:
+    with open(_INDEX_HTML_PATH, "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
 @app.get("/api/health", response_class=PlainTextResponse)
