@@ -2,6 +2,7 @@
 # 处理预录音频文件的播放，���持 ESP32 扬声器、蓝牙、本地音频输出
 
 import os
+import sys
 import wave
 import json
 import asyncio
@@ -9,6 +10,8 @@ import threading
 import queue
 import time
 import hashlib
+import re
+import platform
 from audio_stream import broadcast_pcm16_realtime
 from audio_compressor import compressed_audio_cache, AudioCompressor
 
@@ -24,6 +27,121 @@ _local_audio_stream = None
 _local_audio_backend = ""
 _local_audio_failed = False
 _last_audio_resolve_source = "none"
+
+_audio_metrics_lock = threading.Lock()
+_audio_metrics = {
+    "requested": 0,
+    "resolved": 0,
+    "enqueued": 0,
+    "dropped": 0,
+    "played": 0,
+    "suppressed_empty": 0,
+    "suppressed_cooldown": 0,
+    "failed_no_audio": 0,
+    "resolve_ms_total": 0.0,
+    "resolve_samples": 0,
+    "last_report_ts": time.monotonic(),
+}
+
+
+def _bump_audio_metric(key: str, amount: float = 1.0):
+    with _audio_metrics_lock:
+        if key not in _audio_metrics:
+            _audio_metrics[key] = 0
+        _audio_metrics[key] += amount
+
+
+def _maybe_report_audio_metrics(force: bool = False):
+    try:
+        interval = float(os.getenv("AIGLASS_AUDIO_METRICS_LOG_INTERVAL_SEC", "5.0"))
+    except Exception:
+        interval = 5.0
+    if interval <= 0:
+        return
+
+    now = time.monotonic()
+    with _audio_metrics_lock:
+        last_ts = float(_audio_metrics.get("last_report_ts", now))
+        if (not force) and (now - last_ts < interval):
+            return
+        _audio_metrics["last_report_ts"] = now
+        snap = dict(_audio_metrics)
+
+    samples = int(snap.get("resolve_samples", 0) or 0)
+    avg_resolve_ms = (float(snap.get("resolve_ms_total", 0.0)) / samples) if samples > 0 else 0.0
+    _force_audio_log(
+        "audio_metrics",
+        requested=int(snap.get("requested", 0)),
+        resolved=int(snap.get("resolved", 0)),
+        enqueued=int(snap.get("enqueued", 0)),
+        dropped=int(snap.get("dropped", 0)),
+        played=int(snap.get("played", 0)),
+        suppressed_empty=int(snap.get("suppressed_empty", 0)),
+        suppressed_cooldown=int(snap.get("suppressed_cooldown", 0)),
+        failed_no_audio=int(snap.get("failed_no_audio", 0)),
+        avg_resolve_ms=f"{avg_resolve_ms:.1f}",
+    )
+
+
+def get_audio_runtime_metrics() -> dict:
+    """导出音频运行指标快照（供主流程做自适应降载决策）。"""
+    with _audio_metrics_lock:
+        snap = dict(_audio_metrics)
+    try:
+        snap["queue_size"] = int(_audio_queue.qsize())
+    except Exception:
+        snap["queue_size"] = 0
+    return snap
+
+
+def get_audio_playback_state() -> dict:
+    """
+    导出播放状态（供主流程做“播报完成后再触发检测/播报”门控）。
+
+    字段说明：
+    - busy: 是否忙碌（正在播放或队列中有待播报数据）
+    - queue_size: 当前播放队列长度
+    - is_playing: 当前是否处于播放中
+    - last_finish_ts: 最近一次播放结束的 monotonic 时间戳
+    - active_utterance_id: 当前/最近一次播放序号
+    """
+    with _playing_lock:
+        is_playing = bool(_is_playing)
+        last_finish_ts = float(_last_audio_finish_ts or 0.0)
+        utterance_id = int(_active_utterance_id)
+
+    try:
+        queue_size = int(_audio_queue.qsize())
+    except Exception:
+        queue_size = 0
+
+    return {
+        "busy": bool(is_playing or queue_size > 0),
+        "queue_size": queue_size,
+        "is_playing": is_playing,
+        "last_finish_ts": last_finish_ts,
+        "active_utterance_id": utterance_id,
+    }
+
+
+def _is_critical_text(text: str) -> bool:
+    t = str(text or "")
+    return any(k in t for k in ("紧急", "危险", "警告", "先停", "停下"))
+
+
+def _sanitize_tts_text(text: str) -> str:
+    t = str(text or "").strip()
+    if not t:
+        return ""
+
+    # 压缩停顿与重复标点
+    t = re.sub(r"\s+", " ", t)
+    t = re.sub(r"([，。！？；、,.!?;:：])\1+", r"\1", t)
+
+    # 修复常见口吃重复（尤其是“的的的的”）
+    t = re.sub(r"(的|了|啊|嗯|呃)(?:\s*\1){1,}", r"\1", t)
+
+    return t.strip()
 
 
 def _force_audio_log(event: str, **fields):
@@ -217,6 +335,13 @@ def _init_audio_output():
                 _pre_generate_voice_corpus()
             else:
                 print("[AUDIO] Piper-TTS 不可用，将仅使用预录音频")
+                model_path = getattr(_piper_tts, "model_path", "")
+                model_exists = bool(model_path and os.path.exists(model_path))
+                print(
+                    f"[AUDIO] TTS诊断: python={sys.executable}, model={model_path}, "
+                    f"model_exists={model_exists}"
+                )
+                print("[AUDIO] 建议：激活正确虚拟环境并安装 piper-tts/pathvalidate（已在 requirements.txt）")
         except ImportError:
             print("[AUDIO] 警告: piper_tts 模块未找到，TTS 功能不可用")
         except Exception as e:
@@ -267,6 +392,7 @@ _fragment_cache_lock = threading.Lock()
 _fragment_cache_path = ""
 _fragment_cache_mtime = -1.0
 _fragment_cache_phrases = []
+_punct_silence_tokens = {"，", "。", "、", "；", ",", ".", ";", "：", ":", "！", "!", "?", "？"}
 
 # 音频文件映射（将合并 voice 映射）
 AUDIO_MAP = {
@@ -284,6 +410,7 @@ AUDIO_MAP = {
 
 # 音频缓存，避免重复读取
 _audio_cache = {}
+_audio_bad_files = set()
 
 # 音频播放队列和工作线程 - 使用优先级队列
 _audio_queue = queue.PriorityQueue(maxsize=10)
@@ -293,12 +420,33 @@ _worker_loop = None
 _is_playing = False  # 标记是否正在播放音频
 _playing_lock = threading.Lock()  # 播放锁
 _initialized = False
+_init_lock = threading.Lock()
 _last_play_ts = 0.0  # 记录上次播放结束时间，用于决定预热静音长度
+_last_audio_finish_ts = 0.0  # 最近一次完整播放结束时间（monotonic）
+_active_utterance_id = 0  # 播报序号（用于外部观察播放进度）
 
 def load_wav_file(filepath):
     """加载WAV文件并返回PCM数据（自动转换为8kHz）"""
     if filepath in _audio_cache:
         return _audio_cache[filepath]
+    if filepath in _audio_bad_files:
+        return None
+    if not filepath or (not os.path.exists(filepath)):
+        _audio_bad_files.add(filepath)
+        return None
+    
+    # 先做轻量 header 检查，避免对损坏文件反复触发 wave 异常
+    try:
+        with open(filepath, "rb") as f:
+            magic = f.read(4)
+        if magic not in (b"RIFF", b"RIFX"):
+            _audio_bad_files.add(filepath)
+            print(f"[AUDIO] 跳过损坏音频文件 {filepath}: missing RIFF header")
+            return None
+    except Exception as e:
+        _audio_bad_files.add(filepath)
+        print(f"[AUDIO] 无法读取音频文件 {filepath}: {e}")
+        return None
     
     # 使用压缩缓存
     if os.getenv("AIGLASS_COMPRESS_AUDIO", "1") == "1":
@@ -339,6 +487,7 @@ def load_wav_file(filepath):
             return frames
             
     except Exception as e:
+        _audio_bad_files.add(filepath)
         print(f"[AUDIO] 加载音频文件失败 {filepath}: {e}")
         return None
 
@@ -406,27 +555,86 @@ def preload_all_audio():
     """预加载所有音频文件到内存"""
     print("[AUDIO] 开始预加载音频文件...")
     loaded_count = 0
+    failed_count = 0
+    t0 = time.monotonic()
+
+    # 低算力设备默认限量预加载，避免启动阶段长时间阻塞（如 Jetson Nano）
+    preload_mode = os.getenv("AIGLASS_AUDIO_PRELOAD_MODE", "auto").strip().lower()
+    machine = platform.machine().lower()
+    is_low_power = any(tag in machine for tag in ("aarch64", "armv7", "armv8", "arm64"))
+
+    if preload_mode == "auto":
+        preload_mode = "limited" if is_low_power else "full"
+
+    try:
+        max_files = int(os.getenv("AIGLASS_AUDIO_PRELOAD_MAX_FILES", "0"))
+    except Exception:
+        max_files = 0
+
+    if preload_mode == "limited" and max_files <= 0:
+        max_files = 120 if is_low_power else 800
+    if preload_mode == "off":
+        max_files = 0
+
+    # 按路径去重，避免 map 中一条音频被多次重复预加载
+    unique_targets = []
+    seen_paths = set()
+    for _, filepath in AUDIO_MAP.items():
+        if not filepath or not os.path.exists(filepath):
+            continue
+        if filepath in seen_paths:
+            continue
+        seen_paths.add(filepath)
+        unique_targets.append(filepath)
+
+    total_unique = len(unique_targets)
+    if preload_mode == "off":
+        print(f"[AUDIO] 预加载已关闭（mode=off，可用音频文件={total_unique}）")
+        return
+    if max_files > 0:
+        unique_targets = unique_targets[:max_files]
+
+    total_targets = len(unique_targets)
+    print(
+        f"[AUDIO] 预加载策略: mode={preload_mode}, device={machine}, "
+        f"target={total_targets}/{total_unique}"
+    )
+
+    try:
+        progress_every = int(os.getenv("AIGLASS_AUDIO_PRELOAD_PROGRESS_EVERY", "200"))
+    except Exception:
+        progress_every = 200
+    progress_every = max(1, progress_every)
     
     # 【暂时禁用变速】因为需要修改缓存机制
     # 需要加速的音频列表（斑马线相关）
     # speedup_keywords = ["斑马线", "画面"]
     # speedup_factor = 1.3  # 加速30%
     
-    for audio_key, filepath in AUDIO_MAP.items():
-        if os.path.exists(filepath):
-            # 【修复】暂时使用默认速度加载
-            # need_speedup = any(keyword in audio_key for keyword in speedup_keywords)
-            # speed = speedup_factor if need_speedup else 1.0
-            
-            data = load_wav_file(filepath)  # 使用默认参数
-            if data:
-                loaded_count += 1
-                # if need_speedup:
-                #     print(f"[AUDIO] 加载（加速{speedup_factor}x）: {audio_key}")
+    for idx, filepath in enumerate(unique_targets, start=1):
+        # 【修复】暂时使用默认速度加载
+        # need_speedup = any(keyword in audio_key for keyword in speedup_keywords)
+        # speed = speedup_factor if need_speedup else 1.0
+        data = load_wav_file(filepath)  # 使用默认参数
+        if data:
+            loaded_count += 1
+            # if need_speedup:
+            #     print(f"[AUDIO] 加载（加速{speedup_factor}x）: {audio_key}")
         else:
-            # 降低噪声输出
-            pass
-    print(f"[AUDIO] 预加载完成，共加载 {loaded_count} 个音频文件")
+            failed_count += 1
+
+        if idx % progress_every == 0 or idx == total_targets:
+            elapsed = time.monotonic() - t0
+            print(
+                f"[AUDIO] 预加载进度: {idx}/{total_targets}, "
+                f"loaded={loaded_count}, failed={failed_count}, elapsed={elapsed:.1f}s"
+            )
+
+    elapsed_total = time.monotonic() - t0
+    print(
+        f"[AUDIO] 预加载完成，共加载 {loaded_count} 个音频文件，"
+        f"失败 {failed_count}，耗时 {elapsed_total:.1f}s"
+    )
 
 
 def _ensure_pcm_data(pcm_data: bytes) -> bytes:
@@ -438,16 +646,31 @@ def _ensure_pcm_data(pcm_data: bytes) -> bytes:
 
 
 def _candidate_texts(text: str) -> list:
-    t = (text or "").strip()
-    if not t:
+    raw = (text or "").strip()
+    if not raw:
         return []
+    normalized = _sanitize_tts_text(raw)
+    t = normalized or raw
+
     candidates = [t]
+    if raw != t:
+        candidates.append(raw)
+
     if t[-1:] not in ("。", "！", "!", "？", "?", "."):
         candidates.append(t + "。")
     else:
         t2 = t.rstrip("。.!！?？")
         if t2 and t2 != t:
             candidates.append(t2)
+
+    if raw and raw != t:
+        if raw[-1:] not in ("。", "！", "!", "？", "?", "."):
+            candidates.append(raw + "。")
+        else:
+            raw2 = raw.rstrip("。.!！?？")
+            if raw2 and raw2 != raw:
+                candidates.append(raw2)
+
     # 去重保持顺序
     seen = set()
     out = []
@@ -627,6 +850,13 @@ def _save_generated_audio(text: str, pcm_data: bytes):
 def _get_pcm_for_token(text: str, allow_tts: bool = True, save_generated: bool = True) -> bytes:
     global _last_audio_resolve_source
 
+    token = str(text or "").strip()
+    if token in _punct_silence_tokens:
+        # 纯标点不做 TTS，直接返回短静音，避免无效合成与错误日志
+        _last_audio_resolve_source = "punct_silence"
+        punct_gap_ms = int(os.getenv("AIGLASS_PUNCT_SILENCE_MS", "25"))
+        return b"\x00" * (punct_gap_ms * 8000 * 2 // 1000)
+
     key, path = _find_audio_path_for_text(text)
     if path:
         pcm = _ensure_pcm_data(load_wav_file(path))
@@ -664,7 +894,8 @@ def _get_pcm_from_map_only(text: str) -> bytes:
 def _compose_pcm_from_fragments(text: str, allow_tts: bool = True, save_generated: bool = True) -> bytes:
     global _last_audio_resolve_source
 
-    if os.getenv("AIGLASS_TEXT_FRAGMENT_FALLBACK", "1") != "1":
+    # 默认关闭文本片段拼接，优先整句 TTS 以提升清晰度稳定性。
+    if os.getenv("AIGLASS_TEXT_FRAGMENT_FALLBACK", "0") != "1":
         return b""
 
     phrases = _load_fragment_phrases()
@@ -712,30 +943,35 @@ def _get_pcm_for_text(text: str, allow_tts: bool = True, save_generated: bool = 
     Returns:
         PCM16 音频数据，失败返回空字节
     """
-    pcm = _get_pcm_from_map_only(text)
+    normalized_text = _sanitize_tts_text(text)
+    text_for_lookup = normalized_text or str(text or "").strip()
+
+    pcm = _get_pcm_from_map_only(text_for_lookup)
+    if not pcm and text_for_lookup != str(text or "").strip():
+        pcm = _get_pcm_from_map_only(text)
     if pcm:
-        print(f"[AUDIO] 文本命中成功: '{text}' ({len(pcm)} bytes)")
+        print(f"[AUDIO] 文本命中成功: '{text_for_lookup}' ({len(pcm)} bytes)")
         return pcm
 
-    composed = _compose_pcm_from_fragments(text, allow_tts=allow_tts, save_generated=save_generated)
+    composed = _compose_pcm_from_fragments(text_for_lookup, allow_tts=allow_tts, save_generated=save_generated)
     if composed:
         if save_generated:
-            _save_generated_audio(text, composed)
+            _save_generated_audio(text_for_lookup, composed)
         return composed
 
-    pcm = _get_pcm_for_token(text, allow_tts=allow_tts, save_generated=save_generated)
+    pcm = _get_pcm_for_token(text_for_lookup, allow_tts=allow_tts, save_generated=save_generated)
     if pcm:
-        print(f"[AUDIO] 全文 TTS 成功: '{text}' ({len(pcm)} bytes)")
+        print(f"[AUDIO] 全文 TTS 成功: '{text_for_lookup}' ({len(pcm)} bytes)")
         return pcm
 
     if not _tts_enabled:
-        print(f"[AUDIO] TTS 未启用，无法生成: '{text}'")
+        print(f"[AUDIO] TTS 未启用，无法生成: '{text_for_lookup}'")
     elif allow_tts and (not _piper_tts or not _piper_tts.is_available()):
-        print(f"[AUDIO] TTS 不可用，无法生成: '{text}'")
+        print(f"[AUDIO] TTS 不可用，无法生成: '{text_for_lookup}'")
     elif not allow_tts:
-        print(f"[AUDIO] TTS 回退被禁用，无法生成: '{text}'")
+        print(f"[AUDIO] TTS 回退被禁用，无法生成: '{text_for_lookup}'")
 
-    print(f"[AUDIO] 无法获取音频: '{text}'")
+    print(f"[AUDIO] 无法获取音频: '{text_for_lookup}'")
     return b""
 
 
@@ -807,6 +1043,8 @@ def _pre_generate_voice_corpus():
 
     max_items = int(os.getenv("AIGLASS_TTS_PREGEN_MAX", "200"))
     for it in uniq[:max_items]:
+        if not any(ch.isalnum() for ch in it):
+            continue
         if _find_audio_path_for_text(it)[1]:
             continue
         pcm = _piper_tts.text_to_audio(it)
@@ -879,16 +1117,19 @@ def _enqueue_pcm_threadsafe(pcm_data: bytes):
     try:
         _audio_priority += 1
         _audio_queue.put_nowait((_audio_priority, pcm_data))
+        _bump_audio_metric("enqueued", 1)
     except queue.Full:
         # 队列满则丢弃，保持实时性
+        _bump_audio_metric("dropped", 1)
         pass
 
 def _broadcast_audio_optimized_sync(pcm_data: bytes):
     """在音频工作线程中同步播报：把协程调度到 FastAPI 主事件循环执行。"""
-    global _last_play_ts, _is_playing
+    global _last_play_ts, _is_playing, _last_audio_finish_ts, _active_utterance_id
     try:
         with _playing_lock:
             _is_playing = True
+            _active_utterance_id += 1
 
         now = time.monotonic()
         idle_sec = now - (_last_play_ts or now)
@@ -922,7 +1163,9 @@ def _broadcast_audio_optimized_sync(pcm_data: bytes):
                 bytes=len(full_audio),
             )
             if local_fallback_used:
+                _bump_audio_metric("played", 1)
                 _last_play_ts = time.monotonic()
+                _maybe_report_audio_metrics()
                 return
 
         if srv_loop is None or (hasattr(srv_loop, "is_running") and not srv_loop.is_running()):
@@ -935,11 +1178,14 @@ def _broadcast_audio_optimized_sync(pcm_data: bytes):
                     bytes=len(full_audio),
                 )
                 if local_fallback_used:
+                    _bump_audio_metric("played", 1)
                     _last_play_ts = time.monotonic()
+                    _maybe_report_audio_metrics()
             return
 
         fut = asyncio.run_coroutine_threadsafe(broadcast_pcm16_realtime(full_audio), srv_loop)
         fut.result()
+        _bump_audio_metric("played", 1)
 
         _force_audio_log(
             "output_dispatch",
@@ -949,11 +1195,13 @@ def _broadcast_audio_optimized_sync(pcm_data: bytes):
         )
 
         _last_play_ts = time.monotonic()
+        _maybe_report_audio_metrics()
     except Exception as e:
         print(f"[AUDIO] 广播音频失败: {e}")
     finally:
         with _playing_lock:
             _is_playing = False
+            _last_audio_finish_ts = time.monotonic()
 
 def _audio_worker():
     """音频播放工作线程"""
@@ -996,29 +1244,33 @@ def initialize_audio_system():
     if _initialized:
         return
 
-    # 初始化音频输出（蓝牙、TTS）
-    _init_audio_output()
+    with _init_lock:
+        if _initialized:
+            return
 
-    # 先合并 voice 映射，再预加载
-    _merge_voice_map()
-    preload_all_audio()
+        # 初始化音频输出（蓝牙、TTS）
+        _init_audio_output()
 
-    _worker_thread = threading.Thread(target=_audio_worker, daemon=True)
-    _worker_thread.start()
-    _initialized = True
-    _last_play_ts = 0.0
+        # 先合并 voice 映射，再预加载
+        _merge_voice_map()
+        preload_all_audio()
 
-    # 显示压缩统计
-    if os.getenv("AIGLASS_COMPRESS_AUDIO", "1") == "1":
-        stats = compressed_audio_cache.get_compression_stats()
-        print(f"[AUDIO] 音频压缩统计:")
-        print(f"  - 文件数: {stats['files_cached']}")
-        print(f"  - 原始大小: {stats['total_original_size'] / 1024:.1f} KB")
-        print(f"  - 压缩后: {stats['total_compressed_size'] / 1024:.1f} KB")
-        print(f"  - 压缩率: {stats['compression_ratio']:.1%}")
-        print(f"  - 节省: {stats['bytes_saved'] / 1024:.1f} KB")
+        _worker_thread = threading.Thread(target=_audio_worker, daemon=True)
+        _worker_thread.start()
+        _initialized = True
+        _last_play_ts = 0.0
 
-    print(f"[AUDIO] 音频系统初始化完成（预加载+工作线程，输出模式: {_output_mode}）")
+        # 显示压缩统计
+        if os.getenv("AIGLASS_COMPRESS_AUDIO", "1") == "1":
+            stats = compressed_audio_cache.get_compression_stats()
+            print(f"[AUDIO] 音频压缩统计:")
+            print(f"  - 文件数: {stats['files_cached']}")
+            print(f"  - 原始大小: {stats['total_original_size'] / 1024:.1f} KB")
+            print(f"  - 压缩后: {stats['total_compressed_size'] / 1024:.1f} KB")
+            print(f"  - 压缩率: {stats['compression_ratio']:.1%}")
+            print(f"  - 节省: {stats['bytes_saved'] / 1024:.1f} KB")
+
+        print(f"[AUDIO] 音频系统初始化完成（预加载+工作线程，输出模式: {_output_mode}）")
 
 def play_audio_threadsafe(audio_key):
     """线程安全的音频播放函数（支持动态蓝牙路由）"""
@@ -1034,8 +1286,10 @@ def play_audio_threadsafe(audio_key):
     filepath = AUDIO_MAP[audio_key]
     pcm_data = _audio_cache.get(filepath)
     if pcm_data is None:
-        print(f"[AUDIO] 音频未在缓存中: {audio_key}")
-        return
+        pcm_data = load_wav_file(filepath)
+        if pcm_data is None:
+            print(f"[AUDIO] 音频加载失败: {audio_key} -> {filepath}")
+            return
 
     # 如果是压缩的数据，先解压
     if pcm_data and len(pcm_data) > 5 and pcm_data[0] in [0x01, 0x02]:
@@ -1063,7 +1317,10 @@ def play_audio_threadsafe(audio_key):
 # 全局语音节流
 _last_voice_time = 0
 _last_voice_text = ""
-_voice_cooldown = 1.0  # 相同语音至少间隔1秒
+try:
+    _voice_cooldown = float(os.getenv("AIGLASS_VOICE_TEXT_COOLDOWN_SEC", "0.8"))
+except Exception:
+    _voice_cooldown = 0.8
 
 # 语音优先级定义
 VOICE_PRIORITY = {
@@ -1085,9 +1342,19 @@ def play_voice_text(text: str):
 
     print(f"[AUDIO] play_voice_text 被调用: {text}")
     _force_audio_log("play_voice_text_enter", text=text)
+    _bump_audio_metric("requested", 1)
 
-    if not text:
+    raw_text = str(text or "").strip()
+    cleaned_text = _sanitize_tts_text(raw_text)
+    final_text = cleaned_text or raw_text
+
+    if cleaned_text and cleaned_text != raw_text:
+        _force_audio_log("play_voice_text_sanitized", raw=raw_text, cleaned=cleaned_text)
+
+    if not final_text:
         print(f"[AUDIO] 文本为空，跳过播放")
+        _bump_audio_metric("suppressed_empty", 1)
+        _maybe_report_audio_metrics()
         return
     if not _initialized:
         print(f"[AUDIO] 音频系统未初始化，正在初始化...")
@@ -1096,35 +1363,51 @@ def play_voice_text(text: str):
 
     # 全局节流：相同文本短时间内不重复播放
     current_time = time.time()
-    if text == _last_voice_text and current_time - _last_voice_time < _voice_cooldown:
-        print(f"[AUDIO] 节流跳过: {text} (距离上次 {current_time - _last_voice_time:.2f}秒)")
-        return  # 静默跳过
+    delta = current_time - _last_voice_time
+    is_critical = _is_critical_text(final_text)
+    if final_text == _last_voice_text and delta < _voice_cooldown and not is_critical:
+        print(f"[AUDIO] 节流跳过: {final_text} (距离上次 {delta:.2f}秒)")
+        _force_audio_log("play_voice_text_suppressed", text=final_text, reason="cooldown", delta=f"{delta:.2f}")
+        _bump_audio_metric("suppressed_cooldown", 1)
+        _maybe_report_audio_metrics()
+        return
+    if final_text == _last_voice_text and delta < _voice_cooldown and is_critical:
+        _force_audio_log("play_voice_text_cooldown_bypass", text=final_text, delta=f"{delta:.2f}")
 
-    pcm_data = _get_pcm_for_text(text, allow_tts=True, save_generated=True)
+    resolve_t0 = time.monotonic()
+    pcm_data = _get_pcm_for_text(final_text, allow_tts=True, save_generated=True)
     if not pcm_data:
         # 针对"前方有…注意避让"降级
-        t = (text or "").strip()
+        t = final_text
         if ("前方有" in t) and ("注意避让" in t):
             fallback = "前方有障碍物，注意避让。"
             print(f"[AUDIO] 使用降级文本: '{fallback}'")
             pcm_data = _get_pcm_for_text(fallback, allow_tts=True, save_generated=True)
+    resolve_ms = (time.monotonic() - resolve_t0) * 1000.0
+    _bump_audio_metric("resolve_ms_total", resolve_ms)
+    _bump_audio_metric("resolve_samples", 1)
 
     if pcm_data:
-        print(f"[AUDIO] 成功获取音频数据: '{text}' ({len(pcm_data)} bytes)")
+        print(f"[AUDIO] 成功获取音频数据: '{final_text}' ({len(pcm_data)} bytes)")
+        _bump_audio_metric("resolved", 1)
         _force_audio_log(
             "play_voice_text_resolved",
-            text=text,
+            text=final_text,
             source=_last_audio_resolve_source,
             bytes=len(pcm_data),
+            resolve_ms=f"{resolve_ms:.1f}",
         )
         _enqueue_pcm_threadsafe(pcm_data)
-        _last_voice_text = text
+        _last_voice_text = final_text
         _last_voice_time = current_time
+        _maybe_report_audio_metrics()
         return
 
     # 完全失败，输出日志
-    print(f"[AUDIO] 播放失败: 未找到音频且 TTS 不可用 - '{text}'")
-    _force_audio_log("play_voice_text_failed", text=text, reason="no_audio")
+    print(f"[AUDIO] 播放失败: 未找到音频且 TTS 不可用 - '{final_text}'")
+    _force_audio_log("play_voice_text_failed", text=final_text, reason="no_audio", resolve_ms=f"{resolve_ms:.1f}")
+    _bump_audio_metric("failed_no_audio", 1)
+    _maybe_report_audio_metrics()
 
 # 兼容旧接口
 play_audio_on_esp32 = play_audio_threadsafe

@@ -1,6 +1,6 @@
 # app_main.py
 # -*- coding: utf-8 -*-
-import os, sys, time, json, asyncio, base64, audioop
+import os, sys, time, json, asyncio, base64, audioop, socket
 # ---- Ultralytics 配置目录（避免在受限环境写 ~/.config）----
 _REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 os.environ.setdefault("YOLO_CONFIG_DIR", os.path.join(_REPO_DIR, ".ultralytics"))
@@ -51,8 +51,17 @@ try:
 except Exception:
     pass
 
-# ---- DashScope ASR 基础 ----
-from dashscope import audio as dash_audio  # 若未安装，会在原项目里抛错提示
+# ---- DashScope ASR 基础（可关闭） ----
+try:
+    from dashscope import audio as dash_audio
+    _dashscope_available = True
+except Exception as e:
+    dash_audio = None
+    _dashscope_available = False
+    print(f"[WARNING] DashScope ASR SDK 不可用: {e}")
+
+# 默认关闭云端 ASR（弱网/离线设备建议保持关闭）
+cloud_asr_enabled = os.getenv("AIGLASS_CLOUD_ASR_ENABLED", "0") == "1"
 
 API_KEY = os.getenv("DASHSCOPE_API_KEY")
 if not API_KEY:
@@ -92,6 +101,8 @@ from audio_player import (
     play_structured_voice,
     warmup_voice_texts,
     run_startup_audio_selfcheck,
+    get_audio_runtime_metrics,
+    get_audio_playback_state,
 )
 from event_logger import get_event_logger
 
@@ -111,6 +122,18 @@ from light_reminder import get_light_detector
 # 语义输出模块（Top3 + 去冗余 + 模板生成）
 from semantic_output import get_semantic_engine
 from structured_voice import NAME_ZH as STRUCTURED_NAME_ZH
+
+# 自适应输出模式切换
+from output_mode_strategy import (
+    OutputMode,
+    Context as OutputModeContext,
+    get_output_mode_selector,
+    decide_output_mode,
+)
+from text_generators import (
+    generate_text_from_raw,
+    SemanticObject,
+)
 # 物品搜索增强模块
 from item_search_enhancer import (
     get_item_search_enhancer,
@@ -200,7 +223,7 @@ last_night_light_remind_time = 0.0
 
 # 【新增】自动场景识别（接收到画面后自动运行检测并主动播报）
 auto_scene_detection = os.getenv("AIGLASS_AUTO_SCENE_DETECTION", "1") == "1"
-auto_detection_interval = float(os.getenv("AIGLASS_AUTO_DETECTION_INTERVAL", "3.0"))  # 检测间隔（秒）
+auto_detection_interval = float(os.getenv("AIGLASS_AUTO_DETECTION_INTERVAL", "6.0"))  # 检测间隔（秒）
 last_auto_detection_time = 0.0
 current_detected_scene = "unknown"  # blindpath / crosswalk / obstacle / traffic_light / unknown
 
@@ -208,12 +231,34 @@ current_detected_scene = "unknown"  # blindpath / crosswalk / obstacle / traffic
 semantic_engine = None
 scene_exploration_enabled = False
 last_semantic_emit_ts = 0.0
-semantic_emit_interval_sec = float(os.getenv("AIGLASS_SEM_PERIOD_SEC", "3.0"))
+semantic_emit_interval_sec = float(os.getenv("AIGLASS_SEM_PERIOD_SEC", "6.0"))
 
 # 【新增】实时物体播报（输入实时帧后自动播报）
 realtime_object_announce_enabled = os.getenv("AIGLASS_REALTIME_OBJECT_ANNOUNCE", "1") == "1"
-realtime_object_announce_interval = float(os.getenv("AIGLASS_REALTIME_OBJECT_PERIOD_SEC", "2.5"))
+realtime_object_announce_interval = float(os.getenv("AIGLASS_REALTIME_OBJECT_PERIOD_SEC", "5.0"))
 last_realtime_object_announce_ts = 0.0
+
+# 【新增】语音串行门控（弱算力设备优先保障播报完整性）
+speech_serialize_enabled = os.getenv("AIGLASS_SPEECH_SERIALIZE", "1") == "1"
+scene_after_speech_only = os.getenv("AIGLASS_SCENE_AFTER_SPEECH_ONLY", "1") == "1"
+scene_post_speech_gap_sec = max(0.0, float(os.getenv("AIGLASS_SCENE_POST_SPEECH_GAP_SEC", "0.2")))
+audio_busy_skip_semantic = os.getenv("AIGLASS_AUDIO_BUSY_SKIP_SEMANTIC", "1") == "1"
+
+# 【新增】viewer 传输限流（降低编码与带宽压力）
+viewer_target_fps = max(1.0, float(os.getenv("AIGLASS_VIEWER_TARGET_FPS", "9")))
+viewer_jpeg_quality = max(30, min(95, int(os.getenv("AIGLASS_VIEWER_JPEG_QUALITY", "55"))))
+viewer_max_width = max(320, int(os.getenv("AIGLASS_VIEWER_MAX_WIDTH", "720")))
+
+# 【新增】视觉主链路处理频率上限，避免高输入帧率把主流程压垮
+camera_process_target_fps = max(1.0, float(os.getenv("AIGLASS_CAMERA_PROCESS_TARGET_FPS", "10")))
+viewer_passthrough_on_skip = os.getenv("AIGLASS_VIEWER_PASSTHROUGH_ON_SKIP", "1") == "1"
+nav_debug_enabled = os.getenv("AIGLASS_NAV_DEBUG", "0") == "1"
+
+# 【新增】音频压力触发视频自适应降速
+adaptive_viewer_throttle = os.getenv("AIGLASS_ADAPTIVE_VIEWER_THROTTLE", "1") == "1"
+
+# 【新增】实时链路指标日志间隔
+pipeline_metrics_interval_sec = max(2.0, float(os.getenv("AIGLASS_PIPELINE_METRICS_INTERVAL_SEC", "5.0")))
 
 # 【新增】事件记录器（JSONL，用于回放/评估）
 event_logger = None
@@ -371,6 +416,41 @@ def _warmup_object_voice_assets_in_background() -> None:
             print(f"[VOICE] 白名单物体预设语音准备失败: {e}")
 
     threading.Thread(target=_runner, daemon=True).start()
+
+
+def _speak_with_priority(
+    text: str,
+    priority: int = VoiceScheduler.P3_AI_CHAT,
+    cooldown_key: Optional[str] = None,
+    min_interval: float = 0.0,
+) -> bool:
+    """统一语音调度入口：优先走 VoiceScheduler（支持抢占），失败回退直接播报。"""
+    msg = str(text or "").strip()
+    if not msg:
+        return False
+    try:
+        if voice_scheduler is not None:
+            return bool(
+                voice_scheduler.schedule_and_tick(
+                    text=msg,
+                    priority=int(priority),
+                    cooldown_key=cooldown_key,
+                    min_interval=float(min_interval),
+                )
+            )
+    except Exception as e:
+        print(f"[VOICE_SCHED] 调度失败，回退直接播报: {e}")
+    play_voice_text(msg)
+    return True
+
+
+def _priority_from_guidance(text: str) -> int:
+    t = str(text or "")
+    if any(k in t for k in ("紧急", "先停", "停下", "危险")):
+        return VoiceScheduler.P0_EMERGENCY
+    if any(k in t for k in ("左转", "右转", "绕开", "避让", "注意")):
+        return VoiceScheduler.P1_NAVIGATION
+    return VoiceScheduler.P2_ITEM_SEARCH
 
 # 【新增】模型加载函数
 def load_navigation_models():
@@ -1571,6 +1651,22 @@ async def ws_audio(ws: WebSocket):
     async def on_sdk_error(_msg: str):
         await stop_rec(send_notice="RESTART")
 
+    async def precheck_asr_network() -> Tuple[bool, str]:
+        """
+        ASR 启动前做一次轻量 DNS 预检，避免网络异常时触发后台线程堆栈报错。
+        """
+        if os.getenv("AIGLASS_ASR_PRECHECK", "1") != "1":
+            return True, ""
+
+        host = os.getenv("AIGLASS_ASR_HOST_CHECK", "dashscope.aliyuncs.com").strip() or "dashscope.aliyuncs.com"
+        port = int(os.getenv("AIGLASS_ASR_HOST_PORT", "443"))
+        timeout_sec = float(os.getenv("AIGLASS_ASR_PRECHECK_TIMEOUT_SEC", "1.5"))
+        try:
+            await asyncio.wait_for(asyncio.to_thread(socket.getaddrinfo, host, port), timeout=timeout_sec)
+            return True, ""
+        except Exception as e:
+            return False, f"{type(e).__name__}: {e}"
+
     async def keepalive_loop():
         nonlocal last_ts, recognition, streaming
         try:
@@ -1618,6 +1714,26 @@ async def ws_audio(ws: WebSocket):
                     last_start_time = current_time
 
                     print("[AUDIO] START received")
+                    if not cloud_asr_enabled:
+                        await ws.send_text("ERR:ASR_DISABLED")
+                        await ui_broadcast_partial("（当前为离线模式，云端语音识别已关闭）")
+                        continue
+                    if (not _dashscope_available) or (dash_audio is None):
+                        await ws.send_text("ERR:ASR_SDK_UNAVAILABLE")
+                        await ui_broadcast_partial("（DashScope SDK 不可用，无法启用语音识别）")
+                        continue
+                    if (not API_KEY) or (API_KEY == "placeholder"):
+                        await ws.send_text("ERR:ASR_KEY_MISSING")
+                        await ui_broadcast_partial("（未配置 DASHSCOPE_API_KEY，无法启用语音识别）")
+                        continue
+
+                    net_ok, net_err = await precheck_asr_network()
+                    if not net_ok:
+                        print(f"[ASR] 网络预检失败，跳过本次 START: {net_err}")
+                        await ws.send_text("ERR:ASR_NET_UNAVAILABLE")
+                        await ui_broadcast_partial("（语音识别网络不可用，请检查网络后重试）")
+                        continue
+
                     await stop_rec()
                     loop = asyncio.get_running_loop()
                     def post(coro):
@@ -1635,11 +1751,19 @@ async def ws_audio(ws: WebSocket):
                         interrupt_lock=interrupt_lock,
                     )
 
-                    recognition = dash_audio.asr.Recognition(
-                        api_key=API_KEY, model=MODEL, format=AUDIO_FMT,
-                        sample_rate=SAMPLE_RATE, callback=cb
-                    )
-                    recognition.start()
+                    try:
+                        recognition = dash_audio.asr.Recognition(
+                            api_key=API_KEY, model=MODEL, format=AUDIO_FMT,
+                            sample_rate=SAMPLE_RATE, callback=cb
+                        )
+                        recognition.start()
+                    except Exception as e:
+                        print(f"[ASR] 启动失败: {e}")
+                        await ws.send_text("ERR:ASR_START_FAILED")
+                        await ui_broadcast_partial("（语音识别启动失败，请稍后重试）")
+                        recognition = None
+                        continue
+
                     await set_current_recognition(recognition)
                     streaming = True
                     last_ts = time.monotonic()
@@ -1763,8 +1887,6 @@ async def ws_camera_esp(ws: WebSocket):
 
         # 注意：由于回调是异步的，这里需要特殊处理
         # 暂时使用同步回调，在回调中通过 asyncio 处理
-        import asyncio
-        loop = asyncio.get_running_loop()
 
         def sync_on_target_found(target):
             asyncio.create_task(on_target_found(target))
@@ -1801,6 +1923,139 @@ async def ws_camera_esp(ws: WebSocket):
         print("[NIGHT_MODE] 夜间检测器已初始化")
 
     frame_counter = 0  # 添加帧计数器
+    last_viewer_emit_ts = 0.0
+    last_process_emit_ts = 0.0
+    dynamic_viewer_fps = float(viewer_target_fps)
+    last_audio_dropped = 0
+    metrics_last_log_ts = time.monotonic()
+    metrics_frames = 0
+    metrics_decode_ok = 0
+    metrics_decode_ms = 0.0
+    metrics_semantic_ms = 0.0
+    metrics_nav_ms = 0.0
+    metrics_viewer_encode_ms = 0.0
+    metrics_viewer_sent = 0
+    metrics_voice_emit = 0
+    metrics_scene_gate_block = 0
+    metrics_sem_skip_audio_busy = 0
+
+    async def _send_viewer_frame(frame: Optional[np.ndarray]) -> bool:
+        nonlocal last_viewer_emit_ts, metrics_viewer_encode_ms, metrics_viewer_sent
+        if frame is None or not camera_viewers:
+            return False
+
+        now_mono = time.monotonic()
+        min_interval = 1.0 / max(1.0, dynamic_viewer_fps)
+        if now_mono - last_viewer_emit_ts < min_interval:
+            return False
+
+        send_img = frame
+        try:
+            h, w = frame.shape[:2]
+            if w > viewer_max_width > 0:
+                scale = float(viewer_max_width) / float(w)
+                nh = max(1, int(round(h * scale)))
+                send_img = cv2.resize(frame, (viewer_max_width, nh), interpolation=cv2.INTER_AREA)
+        except Exception:
+            send_img = frame
+
+        encode_t0 = time.monotonic()
+        ok, enc = cv2.imencode(".jpg", send_img, [int(cv2.IMWRITE_JPEG_QUALITY), viewer_jpeg_quality])
+        metrics_viewer_encode_ms += (time.monotonic() - encode_t0) * 1000.0
+        if not ok:
+            return False
+
+        jpeg_data = enc.tobytes()
+        dead = []
+        for viewer_ws in list(camera_viewers):
+            try:
+                await viewer_ws.send_bytes(jpeg_data)
+            except Exception:
+                dead.append(viewer_ws)
+        for dead_ws in dead:
+            camera_viewers.discard(dead_ws)
+
+        metrics_viewer_sent += 1
+        last_viewer_emit_ts = now_mono
+        return True
+
+    async def _send_viewer_jpeg_bytes(jpeg_data: Optional[bytes]) -> bool:
+        """
+        直接透传 ESP32 原始 JPEG（跳过解码/重编码），用于高帧输入下的低负载回传。
+        """
+        nonlocal last_viewer_emit_ts, metrics_viewer_sent
+        if (not jpeg_data) or (not camera_viewers):
+            return False
+
+        now_mono = time.monotonic()
+        min_interval = 1.0 / max(1.0, dynamic_viewer_fps)
+        if now_mono - last_viewer_emit_ts < min_interval:
+            return False
+
+        dead = []
+        for viewer_ws in list(camera_viewers):
+            try:
+                await viewer_ws.send_bytes(jpeg_data)
+            except Exception:
+                dead.append(viewer_ws)
+        for dead_ws in dead:
+            camera_viewers.discard(dead_ws)
+
+        metrics_viewer_sent += 1
+        last_viewer_emit_ts = now_mono
+        return True
+
+    def _maybe_log_pipeline_metrics():
+        nonlocal metrics_last_log_ts
+        nonlocal metrics_frames, metrics_decode_ok, metrics_decode_ms, metrics_semantic_ms, metrics_nav_ms
+        nonlocal metrics_viewer_encode_ms, metrics_viewer_sent, metrics_voice_emit
+        nonlocal metrics_scene_gate_block, metrics_sem_skip_audio_busy
+        nonlocal dynamic_viewer_fps, last_audio_dropped
+        now_mono = time.monotonic()
+        elapsed = now_mono - metrics_last_log_ts
+        if elapsed < pipeline_metrics_interval_sec:
+            return
+
+        audio_stats = get_audio_runtime_metrics() if adaptive_viewer_throttle else {}
+        dropped_now = int(audio_stats.get("dropped", 0) or 0)
+        queue_now = int(audio_stats.get("queue_size", 0) or 0)
+        dropped_delta = max(0, dropped_now - last_audio_dropped)
+        if adaptive_viewer_throttle:
+            # 音频出现丢包/积压时，先降视频发送帧率；平稳后逐步恢复
+            if dropped_delta > 0 or queue_now > 1:
+                dynamic_viewer_fps = max(5.0, dynamic_viewer_fps - 1.0)
+            else:
+                dynamic_viewer_fps = min(float(viewer_target_fps), dynamic_viewer_fps + 0.5)
+        last_audio_dropped = dropped_now
+
+        fps = metrics_frames / elapsed if elapsed > 0 else 0.0
+        decode_ok_rate = (metrics_decode_ok / metrics_frames * 100.0) if metrics_frames > 0 else 0.0
+        avg_decode = (metrics_decode_ms / metrics_decode_ok) if metrics_decode_ok > 0 else 0.0
+        avg_sem = (metrics_semantic_ms / metrics_frames) if metrics_frames > 0 else 0.0
+        avg_nav = (metrics_nav_ms / metrics_frames) if metrics_frames > 0 else 0.0
+        avg_encode = (metrics_viewer_encode_ms / metrics_viewer_sent) if metrics_viewer_sent > 0 else 0.0
+
+        print(
+            "[PIPELINE] "
+            f"fps_in={fps:.1f} decode_ok={decode_ok_rate:.1f}% "
+            f"decode_ms={avg_decode:.1f} sem_ms/frame={avg_sem:.1f} nav_ms/frame={avg_nav:.1f} "
+            f"viewer_fps={metrics_viewer_sent/elapsed:.1f} viewer_encode_ms={avg_encode:.1f} "
+            f"voice_emit={metrics_voice_emit} viewer_fps_target={dynamic_viewer_fps:.1f} "
+            f"audio_dropped_delta={dropped_delta} audio_q={queue_now} "
+            f"scene_gate_block={metrics_scene_gate_block} sem_skip_busy={metrics_sem_skip_audio_busy}"
+        )
+
+        metrics_last_log_ts = now_mono
+        metrics_frames = 0
+        metrics_decode_ok = 0
+        metrics_decode_ms = 0.0
+        metrics_semantic_ms = 0.0
+        metrics_nav_ms = 0.0
+        metrics_viewer_encode_ms = 0.0
+        metrics_viewer_sent = 0
+        metrics_voice_emit = 0
+        metrics_scene_gate_block = 0
+        metrics_sem_skip_audio_busy = 0
     
     try:
         while True:
@@ -1808,6 +2063,7 @@ async def ws_camera_esp(ws: WebSocket):
             if "bytes" in msg and msg["bytes"] is not None:
                 data = msg["bytes"]
                 frame_counter += 1
+                metrics_frames += 1
 
                 # 【已禁用】录制原始帧 - 已注释以减少数据传输占用
                 # try:
@@ -1823,30 +2079,45 @@ async def ws_camera_esp(ws: WebSocket):
                 
                 # 推送到bridge_io（供yolomedia使用）
                 bridge_io.push_raw_jpeg(data)
-                
+
                 # 【调试】检查导航条件
-                if frame_counter % 30 == 0:  # 每30帧输出一次
+                if nav_debug_enabled and frame_counter % 120 == 0:
                     state_dbg = orchestrator.get_state() if orchestrator else "N/A"
                     print(f"[NAVIGATION DEBUG] 帧:{frame_counter}, state={state_dbg}, yolomedia_running={yolomedia_running}")
-                
+
+                # 主处理链路限速（前移到解码前）：过高输入帧率直接跳过重处理
+                now_mono = time.monotonic()
+                min_proc_interval = 1.0 / max(1.0, camera_process_target_fps)
+                if now_mono - last_process_emit_ts < min_proc_interval:
+                    if not yolomedia_sending_frames and camera_viewers:
+                        if viewer_passthrough_on_skip:
+                            await _send_viewer_jpeg_bytes(data)
+                    _maybe_log_pipeline_metrics()
+                    continue
+                last_process_emit_ts = now_mono
+
                 # 统一解码（添加更严格的异常处理）
                 try:
+                    decode_t0 = time.monotonic()
                     arr = np.frombuffer(data, dtype=np.uint8)
                     bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    metrics_decode_ms += (time.monotonic() - decode_t0) * 1000.0
                     # 验证解码结果
                     if bgr is None or bgr.size == 0:
-                        if frame_counter % 30 == 0:
+                        if nav_debug_enabled and frame_counter % 120 == 0:
                             print(f"[JPEG] 解码失败：数据长度={len(data)}")
                         bgr = None
+                    else:
+                        metrics_decode_ok += 1
                 except Exception as e:
-                    if frame_counter % 30 == 0:
+                    if nav_debug_enabled and frame_counter % 120 == 0:
                         print(f"[JPEG] 解码异常: {e}")
                     bgr = None
 
                 # 【新增】夜间模式检测（每帧检查，但内部按间隔采样）
                 if night_detector is not None and bgr is not None:
                     try:
-                        night_result = night_detector.process_frame(bgr)
+                        night_result = await asyncio.to_thread(night_detector.process_frame, bgr)
                         if night_result.get('changed', False):
                             # 夜间模式切换回调已在初始化时设置
                             pass
@@ -1858,7 +2129,13 @@ async def ws_camera_esp(ws: WebSocket):
                                 is_outdoor = _check_if_outdoor(bgr)
                                 if is_outdoor:
                                     msg = "天色已晚，建议打开指示灯，让别人注意到您。"
-                                    play_voice_text(msg)
+                                    _speak_with_priority(
+                                        msg,
+                                        priority=VoiceScheduler.P2_ITEM_SEARCH,
+                                        cooldown_key="night_light_reminder",
+                                        min_interval=60.0,
+                                    )
+                                    metrics_voice_emit += 1
                                     await ui_broadcast_final(f"[导航] {msg}")
                                     last_night_light_remind_time = current_time
                                     print(f"[NIGHT_LIGHT] 已提醒用户开灯 (冷却时间: {night_light_reminder_cooldown}秒)")
@@ -1871,93 +2148,195 @@ async def ws_camera_esp(ws: WebSocket):
                     try:
                         st = orchestrator.get_state() if orchestrator else "CHAT"
                         if st in ("CHAT", "IDLE"):
-                            lr = light_detector.process_frame(bgr)
+                            lr = await asyncio.to_thread(light_detector.process_frame, bgr)
                             if lr.get("should_remind", False) and lr.get("is_on", False):
                                 msg = "我检测到灯可能还开着，记得关灯。"
-                                play_voice_text(msg)
+                                _speak_with_priority(
+                                    msg,
+                                    priority=VoiceScheduler.P3_AI_CHAT,
+                                    cooldown_key="light_reminder",
+                                    min_interval=30.0,
+                                )
+                                metrics_voice_emit += 1
                                 await ui_broadcast_final(f"[AI] {msg}")
                     except Exception as e:
                         if frame_counter % 200 == 0:
                             print(f"[LIGHT] 检测失败: {e}")
 
-                # 【新增】场景探索：周期性输出 Top-3 关键物体的可执行提示（仅在非导航模式）
-                if semantic_engine is not None and scene_exploration_enabled and bgr is not None:
+                # 【优化】语义结果复用：同一帧最多执行一次 detect+describe，供多分支共用
+                st = orchestrator.get_state() if orchestrator else "CHAT"
+                now_ts = time.time()
+                need_sem_emit_raw = (
+                    semantic_engine is not None
+                    and scene_exploration_enabled
+                    and bgr is not None
+                    and st in ("CHAT", "IDLE")
+                    and (now_ts - last_semantic_emit_ts) >= semantic_emit_interval_sec
+                )
+                need_rt_announce_raw = (
+                    semantic_engine is not None
+                    and realtime_object_announce_enabled
+                    and bgr is not None
+                    and (now_ts - last_realtime_object_announce_ts) >= realtime_object_announce_interval
+                )
+                need_auto_scene_raw = (
+                    auto_scene_detection
+                    and bgr is not None
+                    and (now_ts - last_auto_detection_time) >= auto_detection_interval
+                )
+
+                now_gate_mono = time.monotonic()
+                playback_state = get_audio_playback_state()
+                audio_busy_now = bool(playback_state.get("busy", False))
+                last_finish_mono = float(playback_state.get("last_finish_ts", 0.0) or 0.0)
+                post_speech_gap_ready = True
+                if scene_after_speech_only and scene_post_speech_gap_sec > 0.0 and last_finish_mono > 0.0:
+                    post_speech_gap_ready = (now_gate_mono - last_finish_mono) >= scene_post_speech_gap_sec
+
+                scene_gate_open = True
+                if speech_serialize_enabled and audio_busy_now:
+                    scene_gate_open = False
+                if not post_speech_gap_ready:
+                    scene_gate_open = False
+
+                if not scene_gate_open and (need_sem_emit_raw or need_rt_announce_raw or need_auto_scene_raw):
+                    metrics_scene_gate_block += 1
+
+                need_sem_emit = bool(need_sem_emit_raw and scene_gate_open)
+                need_rt_announce = bool(need_rt_announce_raw and scene_gate_open)
+                need_auto_scene = bool(need_auto_scene_raw and scene_gate_open)
+
+                skip_semantic_due_audio_busy = bool(
+                    audio_busy_skip_semantic
+                    and audio_busy_now
+                    and (need_sem_emit_raw or need_rt_announce_raw or need_auto_scene_raw)
+                )
+                if skip_semantic_due_audio_busy:
+                    metrics_sem_skip_audio_busy += 1
+
+                sem_out = None
+                sem_objs = []
+                sem_scene = current_detected_scene or "unknown"
+                sem_scene_conf = 0.0
+
+                if (need_sem_emit or need_rt_announce or need_auto_scene) and (not skip_semantic_due_audio_busy):
                     try:
-                        st = orchestrator.get_state() if orchestrator else "CHAT"
-                        now_ts = time.time()
-                        if st in ("CHAT", "IDLE") and (now_ts - last_semantic_emit_ts) >= semantic_emit_interval_sec:
-                            h, w = bgr.shape[:2]
-                            mean_luma = float(np.mean(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY))) if bgr is not None else None
-                            raw_objs = obstacle_detector.detect(bgr) if obstacle_detector is not None else []
-                            out = semantic_engine.describe(
-                                raw_objs,
-                                frame_w=w,
-                                frame_h=h,
-                                mean_luma=mean_luma,
-                                imu_yaw_deg=latest_yaw_deg,
-                                imu_yaw_rate_dps=latest_yaw_rate_dps,
+                        sem_t0 = time.monotonic()
+                        h, w = bgr.shape[:2]
+                        mean_luma = float(np.mean(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)))
+                        raw_objs = (
+                            await asyncio.to_thread(obstacle_detector.detect, bgr)
+                            if obstacle_detector is not None
+                            else []
+                        )
+                        sem_out = (
+                            await asyncio.to_thread(
+                                lambda: semantic_engine.describe(
+                                    raw_objs,
+                                    frame_w=w,
+                                    frame_h=h,
+                                    mean_luma=mean_luma,
+                                    imu_yaw_deg=latest_yaw_deg,
+                                    imu_yaw_rate_dps=latest_yaw_rate_dps,
+                                )
                             )
-                            # 【已禁用】记录语义自动事件
-                            # try:
-                            #     if event_logger is not None:
-                            #         event_logger.log({"type": "semantic_auto", "state": st, "payload": out})
-                            # except Exception:
-                            #     pass
-                            if out.get("should_speak", False):
-                                if not play_structured_voice(out):
-                                    if out.get("text"):
-                                        play_voice_text(out["text"])
-                                if out.get("text"):
-                                    await ui_broadcast_final(f"[导航] {out['text']}")
-                            last_semantic_emit_ts = now_ts
+                            if semantic_engine is not None
+                            else None
+                        )
+                        metrics_semantic_ms += (time.monotonic() - sem_t0) * 1000.0
+
+                        if sem_out:
+                            sem_objs = sem_out.get("objects") or []
+                            sem_scene = str(sem_out.get("scene") or sem_scene or "unknown")
+                            sem_scene_conf = float(sem_out.get("scene_confidence") or 0.0)
+                    except Exception as e:
+                        if frame_counter % 200 == 0:
+                            print(f"[SEMANTIC] 复用计算失败: {e}")
+
+                # 【新增】场景探索：周期性输出 Top-3 关键物体的可执行提示（仅在非导航模式）
+                if need_sem_emit:
+                    try:
+                        if sem_out and sem_out.get("should_speak", False) and sem_out.get("text"):
+                            _speak_with_priority(
+                                sem_out["text"],
+                                priority=int(sem_out.get("priority", VoiceScheduler.P2_ITEM_SEARCH)),
+                                cooldown_key=f"sem:{sem_out.get('scene', 'unknown')}",
+                                min_interval=max(1.0, semantic_emit_interval_sec * 0.8),
+                            )
+                            metrics_voice_emit += 1
+                            await ui_broadcast_final(f"[导航] {sem_out['text']}")
+                        last_semantic_emit_ts = now_ts
                     except Exception as e:
                         if frame_counter % 200 == 0:
                             print(f"[SEMANTIC] 输出失败: {e}")
 
                 # 【新增】实时物体播报：输入实时帧后直接播报白名单物体（默认开启）
-                if semantic_engine is not None and realtime_object_announce_enabled and bgr is not None:
+                # 【优化】使用自适应输出模式切换（关键词/短句/段落）
+                if need_rt_announce:
                     try:
-                        now_ts = time.time()
-                        if (now_ts - last_realtime_object_announce_ts) >= realtime_object_announce_interval:
-                            h, w = bgr.shape[:2]
-                            mean_luma = float(np.mean(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)))
-                            raw_objs = obstacle_detector.detect(bgr) if obstacle_detector is not None else []
-                            out = semantic_engine.describe(
-                                raw_objs,
-                                frame_w=w,
-                                frame_h=h,
-                                mean_luma=mean_luma,
-                                imu_yaw_deg=latest_yaw_deg,
-                                imu_yaw_rate_dps=latest_yaw_rate_dps,
+                        should_speak = bool((sem_out or {}).get("should_speak", False))
+                        has_high_urgency = any(
+                            str((o or {}).get("urgency") or "").upper() == "HIGH"
+                            for o in sem_objs
+                        )
+
+                        mode = decide_output_mode(
+                            yaw_rate=latest_yaw_rate_dps,
+                            scene_type=sem_scene,
+                            object_count=len(sem_objs),
+                            has_high_urgency=has_high_urgency,
+                            last_announce_interval=now_ts - last_realtime_object_announce_ts,
+                            user_preference=os.getenv("AIGLASS_OUTPUT_MODE_PREF", "auto")
+                        )
+
+                        msg = generate_text_from_raw(mode, sem_objs, sem_scene)
+                        if os.getenv("AIGLASS_DEBUG_OUTPUT_MODE", "0") == "1":
+                            print(
+                                f"[OUTPUT_MODE] 模式: {mode.value}, 物体数: {len(sem_objs)}, "
+                                f"转头速度: {latest_yaw_rate_dps:.1f}, should_speak={should_speak}, "
+                                f"播报: {msg[:50]}..."
                             )
-                            msg = _build_realtime_object_announce_text(out)
-                            if msg and out.get("should_speak", False):
-                                play_voice_text(msg)
-                                await ui_broadcast_final(f"[导航] {msg}")
-                                last_realtime_object_announce_ts = now_ts
+
+                        if msg and should_speak:
+                            rt_priority = VoiceScheduler.P0_HEAD_OBSTACLE if has_high_urgency else VoiceScheduler.P2_ITEM_SEARCH
+                            _speak_with_priority(
+                                msg,
+                                priority=rt_priority,
+                                cooldown_key=f"realtime:{msg}",
+                                min_interval=max(0.8, realtime_object_announce_interval * 0.8),
+                            )
+                            metrics_voice_emit += 1
+                            await ui_broadcast_final(f"[导航] {msg}")
+                            last_realtime_object_announce_ts = now_ts
                     except Exception as e:
                         if frame_counter % 200 == 0:
                             print(f"[REALTIME_OBJECT] 播报失败: {e}")
 
-                # 【新增】自动场景识别：接收到画面后自动运行检测并主动播报
-                if auto_scene_detection and bgr is not None:
-                    current_time = time.time()
-                    if (current_time - last_auto_detection_time) >= auto_detection_interval:
-                        last_auto_detection_time = current_time
+                # 【新增】自动场景识别：优先复用语义输出，必要时回退到原检测逻辑
+                if need_auto_scene:
+                    last_auto_detection_time = now_ts
+                    try:
+                        scene = sem_scene
+                        confidence = sem_scene_conf
+                        if scene in ("", "unknown") or confidence <= 0.0:
+                            scene, confidence = await asyncio.to_thread(_detect_scene, bgr)
 
-                        try:
-                            scene, confidence = _detect_scene(bgr)
-                            # 场景切换或高置信度时播报
-                            if scene != current_detected_scene and confidence > 0.6:
-                                current_detected_scene = scene
-                                msg = _get_scene_announcement(scene)
-                                if msg:
-                                    play_voice_text(msg)
-                                    await ui_broadcast_final(f"[导航] {msg}")
-                                    print(f"[AUTO_SCENE] 检测到场景: {scene}, 播报: {msg}")
-                        except Exception as e:
-                            if frame_counter % 200 == 0:
-                                print(f"[AUTO_SCENE] 检测失败: {e}")
+                        if scene != current_detected_scene and confidence > 0.6:
+                            current_detected_scene = scene
+                            msg = _get_scene_announcement(scene)
+                            if msg:
+                                _speak_with_priority(
+                                    msg,
+                                    priority=VoiceScheduler.P1_NAVIGATION,
+                                    cooldown_key=f"scene:{scene}",
+                                    min_interval=2.0,
+                                )
+                                metrics_voice_emit += 1
+                                await ui_broadcast_final(f"[导航] {msg}")
+                                print(f"[AUTO_SCENE] 检测到场景: {scene}, 播报: {msg}")
+                    except Exception as e:
+                        if frame_counter % 200 == 0:
+                            print(f"[AUTO_SCENE] 检测失败: {e}")
 
                 # 【托管】优先交给统领状态机（寻物未占用画面时）
                 # 【修改】找物品模式时不执行导航处理，让yolomedia接管画面
@@ -1968,61 +2347,55 @@ async def ws_camera_esp(ws: WebSocket):
                     if current_state == "ITEM_SEARCH":
                         # 找物品模式下，如果yolomedia还没开始发送帧，先显示原始画面
                         if not yolomedia_sending_frames and camera_viewers:
-                            ok, enc = cv2.imencode(".jpg", bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-                            if ok:
-                                jpeg_data = enc.tobytes()
-                                dead = []
-                                for viewer_ws in list(camera_viewers):
-                                    try:
-                                        await viewer_ws.send_bytes(jpeg_data)
-                                    except Exception:
-                                        dead.append(viewer_ws)
-                                for d in dead:
-                                    camera_viewers.discard(d)
+                            await _send_viewer_frame(bgr)
+                        _maybe_log_pipeline_metrics()
                         continue  # 跳过后续的导航处理
                     
                     out_img = bgr
                     try:
+                        nav_t0 = time.monotonic()
                         # 【新增】检查是否在红绿灯检测模式
                         if current_state == "TRAFFIC_LIGHT_DETECTION":
                             # 红绿灯检测模式：在主线程中直接处理，避免掉帧
                             import trafficlight_detection
-                            result = trafficlight_detection.process_single_frame(bgr, ui_broadcast_callback=ui_broadcast_final)
+                            result = await asyncio.to_thread(
+                                trafficlight_detection.process_single_frame,
+                                bgr,
+                                None,
+                            )
                             out_img = result['vis_image'] if result['vis_image'] is not None else bgr
                         else:
                             # 其他模式：正常的导航处理
-                            res = orchestrator.process_frame(bgr)
+                            res = await asyncio.to_thread(orchestrator.process_frame, bgr)
 
                             # 语音引导（内部已节流）
                             # 注：omni对话时已切换到CHAT模式，不会生成导航语音
                             if res.guidance_text:
                                 try:
                                     # 先播放语音，再广播到UI
-                                    play_voice_text(res.guidance_text)
+                                    _speak_with_priority(
+                                        res.guidance_text,
+                                        priority=_priority_from_guidance(res.guidance_text),
+                                        cooldown_key=f"guidance:{res.guidance_text}",
+                                        min_interval=0.8,
+                                    )
+                                    metrics_voice_emit += 1
                                     await ui_broadcast_final(f"[导航] {res.guidance_text}")
                                 except Exception:
                                     pass
 
                             # 输出图像
                             out_img = res.annotated_image if res.annotated_image is not None else bgr
+                        metrics_nav_ms += (time.monotonic() - nav_t0) * 1000.0
                     except Exception as e:
                         if frame_counter % 100 == 0:
                             print(f"[NAV MASTER] 处理帧时出错: {e}")
 
                     # 广播图像
                     if camera_viewers and out_img is not None:
-                        ok, enc = cv2.imencode(".jpg", out_img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-                        if ok:
-                            jpeg_data = enc.tobytes()
-                            dead = []
-                            for viewer_ws in list(camera_viewers):
-                                try:
-                                    await viewer_ws.send_bytes(jpeg_data)
-                                except Exception:
-                                    dead.append(viewer_ws)
-                            for d in dead:
-                                camera_viewers.discard(d)
+                        await _send_viewer_frame(out_img)
                     # 已托管，进入下一帧
+                    _maybe_log_pipeline_metrics()
                     continue
 
                 # 【回退】寻物占用或者未解码成功，按原始画面回传
@@ -2032,19 +2405,10 @@ async def ws_camera_esp(ws: WebSocket):
                             arr = np.frombuffer(data, dtype=np.uint8)
                             bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
                         if bgr is not None:
-                            ok, enc = cv2.imencode(".jpg", bgr, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-                            if ok:
-                                jpeg_data = enc.tobytes()
-                                dead = []
-                                for viewer_ws in list(camera_viewers):
-                                    try:
-                                        await viewer_ws.send_bytes(jpeg_data)
-                                    except Exception:
-                                        dead.append(viewer_ws)
-                                for ws in dead:
-                                    camera_viewers.discard(ws)
+                            await _send_viewer_frame(bgr)
                     except Exception as e:
                         print(f"[CAMERA] Broadcast error: {e}")
+                _maybe_log_pipeline_metrics()
 
             elif "type" in msg and msg["type"] in ("websocket.close", "websocket.disconnect"):
                 break

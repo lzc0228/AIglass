@@ -23,6 +23,7 @@ import json
 import math
 import os
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -285,6 +286,10 @@ class SemanticObject:
     urgency: str
     avoidance_action: str
     relations: List[str]
+    risk_score: float = 0.0
+    risk_factors: Optional[Dict[str, float]] = None
+    motion_dir: str = "unknown"
+    speed_norm: float = 0.0
     frame_w: Optional[int] = None
     frame_h: Optional[int] = None
 
@@ -304,6 +309,10 @@ class SemanticObject:
             "urgency": self.urgency,
             "avoidance_action": self.avoidance_action,
             "relations": self.relations,
+            "risk_score": self.risk_score,
+            "risk_factors": dict(self.risk_factors or {}),
+            "motion_dir": self.motion_dir,
+            "speed_norm": self.speed_norm,
         }
 
 
@@ -339,10 +348,20 @@ class SemanticOutputEngine:
         self.iou_dedup_thr = float(os.getenv("AIGLASS_SEM_IOU_DEDUP", "0.6"))
         self.deduper = TextDeduper(min_interval_sec=float(os.getenv("AIGLASS_SEM_MIN_INTERVAL", "3.0")))
         self.turn_rate_thr_dps = float(os.getenv("AIGLASS_SEM_TURN_DPS", "25.0"))
+        self.conf_threshold = float(os.getenv("AIGLASS_SEM_CONF_THRESHOLD", "0.2"))
+        self.stage1_topk = int(os.getenv("AIGLASS_SEM_STAGE1_TOPK", "10"))
+        self.stage2_topk = int(os.getenv("AIGLASS_SEM_STAGE2_TOPK", "5"))
+        self.output_topk = int(os.getenv("AIGLASS_SEM_OUTPUT_TOPK", "3"))
+        self.motion_dt_max = float(os.getenv("AIGLASS_SEM_MOTION_DT_MAX", "1.5"))
+        self.motion_px_norm = float(os.getenv("AIGLASS_SEM_MOTION_PX_NORM", "0.35"))
+        self.occlusion_iou_thr = float(os.getenv("AIGLASS_SEM_OCCLUSION_IOU", "0.1"))
 
         # 稳定性指标（WP4 会进一步结合 IMU）
         self.prev_signature: Optional[str] = None
         self.jump_count: int = 0
+        self._track_cache: Dict[str, List[Dict[str, float]]] = defaultdict(list)
+        self.scene_strategies = list(self._SCENE_STRATEGIES)
+        self._load_scene_strategies()
 
     def reload_weights(self):
         """加载所有权重文件（包括新增的场景权重文件）"""
@@ -364,11 +383,95 @@ class SemanticOutputEngine:
 
         print(f"[SEMANTIC] 已加载场景权重: {list(self.scene_weights.keys())}")
 
-    def infer_scene_with_confidence(self, names: List[str], mean_luma: Optional[float] = None) -> Tuple[str, float]:
-        """扩展的场景识别（支持20+场景类型）"""
-        nset = {str(n).strip().lower() for n in (names or [])}
-        joined = " ".join(nset)
+    # 场景识别策略表（替代大量 if-elif，提高可维护性）
+    # 格式: (场景名称, {关键词集合}, 基础置信度, 优先级)
+    # 优先级用于解决多个场景同时匹配时的冲突（数字越大优先级越高）
+    _SCENE_STRATEGIES = [
+        # 交通场景（高优先级）
+        ("traffic_light", {"traffic light", "signal", "red light", "green light"}, 0.9, 5),
+        ("crosswalk", {"crosswalk", "zebra crossing", "zebra"}, 0.8, 4),
+        ("sidewalk", {"sidewalk", "pedestrian", "curb"}, 0.7, 3),
+        ("crossroad", {"crossroad", "intersection", "stop line"}, 0.7, 3),
+        ("bus_stop", {"bus stop", "bus stop sign", "transit shelter", "bus station"}, 0.8, 3),
 
+        # 医疗场景
+        ("hospital", {"hospital", "clinic", "doctor", "nurse", "wheelchair",
+                      "stretcher", "gurney", "medical", "iv drip", "hospital bed"}, 0.8, 4),
+
+        # 商业场景
+        ("supermarket", {"supermarket", "shelf", "shopping cart", "aisle",
+                         "checkout", "grocery", "price tag", "cart"}, 0.8, 3),
+        ("mall", {"mall", "escalator", "mannequin", "storefront", "display", "brand"}, 0.8, 3),
+        ("restaurant", {"restaurant", "table", "chair", "dining", "menu", "waiter"}, 0.7, 2),
+        ("bank", {"bank", "atm", "teller", "vault", "queue"}, 0.7, 2),
+
+        # 施工/危险场景（高优先级）
+        ("construction", {"cone", "barrier", "fence", "construction",
+                          "warning sign", "safety vest", "excavator", "crane"}, 0.9, 5),
+
+        # 室内导航场景
+        ("elevator", {"elevator", "lift", "floor button"}, 0.8, 3),
+        ("stairs", {"stairs", "stair", "staircase", "handrail", "step"}, 0.8, 3),
+        ("corridor", {"corridor", "hallway", "room number", "exit sign"}, 0.7, 2),
+        ("restroom", {"restroom", "toilet", "sink", "mirror", "bathroom"}, 0.7, 2),
+
+        # 公共交通
+        ("subway", {"subway", "metro", "turnstile", "ticket machine",
+                     "fare gate", "platform", "metro train"}, 0.8, 3),
+
+        # 户外场景
+        ("park", {"park", "garden", "tree", "bench", "lawn", "grass",
+                  "flower bed", "fountain", "pond"}, 0.7, 2),
+        ("square", {"square", "plaza", "statue", "open area"}, 0.7, 2),
+
+        # 办公/教育场景
+        ("office", {"office", "desk", "computer", "printer", "cubicle"}, 0.7, 2),
+        ("school", {"school", "classroom", "student", "blackboard", "campus"}, 0.7, 2),
+    ]
+
+    def _load_scene_strategies(self):
+        """支持从 JSON 加载场景策略，便于扩展到 100+ 场景而不改代码。"""
+        path = os.getenv("AIGLASS_SCENE_STRATEGIES", os.path.join(self.weights_dir, "scene_strategies.json"))
+        if not path or not os.path.exists(path):
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f) or []
+            strategies = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name", "")).strip()
+                if not name:
+                    continue
+                keywords_raw = item.get("keywords") or []
+                if not isinstance(keywords_raw, (list, tuple, set)):
+                    continue
+                keywords = {str(k).strip().lower() for k in keywords_raw if str(k).strip()}
+                if not keywords:
+                    continue
+                base_conf = float(item.get("base_confidence", item.get("base_conf", 0.7)))
+                priority = int(item.get("priority", 1))
+                strategies.append((name, keywords, base_conf, priority))
+            if strategies:
+                self.scene_strategies = strategies
+                print(f"[SEMANTIC] 已加载外部场景策略: {len(strategies)} 条 ({path})")
+        except Exception as e:
+            print(f"[SEMANTIC] 外部场景策略加载失败: {e}")
+
+    def infer_scene_with_confidence(self, names: List[str], mean_luma: Optional[float] = None) -> Tuple[str, float]:
+        """
+        基于策略表的场景识别（替代原有大量 if-elif）
+
+        优势：
+        - 可维护性：新增场景只需在策略表中添加一行
+        - 可配置性：策略表可以从外部配置文件加载
+        - 可测试性：策略表可以独立测试
+        - 性能：单次遍历即可完成所有场景匹配
+        """
+        nset = {str(n).strip().lower() for n in (names or [])}
+
+        # 首先尝试使用结构化语音模块的场景识别
         if STRUCTURED_VOICE_AVAILABLE:
             try:
                 scene_enum, conf = infer_scene_from_objects(
@@ -379,74 +482,22 @@ class SemanticOutputEngine:
             except Exception:
                 pass
 
-        # 交通细分场景
-        if any(kw in joined for kw in {"traffic light", "signal"}):
-            return "traffic_light", 0.9
-        if any(kw in joined for kw in {"crosswalk", "zebra crossing", "zebra"}):
-            return "crosswalk", 0.8
-        if any(kw in joined for kw in {"sidewalk", "pedestrian"}):
-            return "sidewalk", 0.7
-        if any(kw in joined for kw in {"crossroad", "intersection"}):
-            return "crossroad", 0.7
+        # 使用策略表进行场景识别
+        scores = []
+        for scene_name, keywords, base_conf, priority in self.scene_strategies:
+            matched = nset & keywords
+            if matched:
+                # 基于匹配数量和优先级计算得分
+                match_score = len(matched) / len(keywords)
+                final_conf = base_conf * (0.5 + 0.5 * match_score)
+                scores.append((scene_name, final_conf, priority))
 
-        # 医院场景特征
-        hospital_keywords = {"hospital", "clinic", "doctor", "nurse", "wheelchair",
-                             "stretcher", "gurney", "medical", "iv drip", "hospital bed"}
-        if any(kw in joined for kw in hospital_keywords):
-            return "hospital", 0.8
+        # 按置信度排序，相同置信度时优先级高的胜出
+        if scores:
+            scores.sort(key=lambda x: (x[1], x[2]), reverse=True)
+            return scores[0][0], scores[0][1]
 
-        # 超市场景特征
-        supermarket_keywords = {"supermarket", "shelf", "shopping cart", "aisle",
-                                "checkout", "grocery", "price tag", "cart"}
-        if any(kw in joined for kw in supermarket_keywords):
-            return "supermarket", 0.8
-
-        # 商场场景特征
-        mall_keywords = {"mall", "escalator", "mannequin", "storefront", "display", "brand"}
-        if any(kw in joined for kw in mall_keywords):
-            return "mall", 0.8
-
-        # 施工区域特征
-        construction_keywords = {"cone", "barrier", "fence", "construction",
-                                 "warning sign", "safety vest", "excavator", "crane"}
-        if any(kw in joined for kw in construction_keywords):
-            return "construction", 0.9
-
-        # 电梯/楼梯/走廊
-        if any(kw in joined for kw in {"elevator", "lift", "floor button"}):
-            return "elevator", 0.8
-        if any(kw in joined for kw in {"stairs", "stair", "staircase", "handrail", "step"}):
-            return "stairs", 0.8
-        if any(kw in joined for kw in {"corridor", "hallway", "room number", "exit sign"}):
-            return "corridor", 0.7
-        if any(kw in joined for kw in {"restroom", "toilet", "sink", "mirror"}):
-            return "restroom", 0.7
-
-        # 地铁/公交站
-        if any(kw in joined for kw in {"subway", "metro", "turnstile", "ticket machine",
-                                       "fare gate", "platform", "metro train"}):
-            return "subway", 0.8
-        if any(kw in joined for kw in {"bus stop", "bus stop sign", "transit shelter"}):
-            return "bus_stop", 0.8
-
-        # 公园/广场
-        if any(kw in joined for kw in {"park", "garden", "tree", "bench", "lawn", "grass",
-                                       "flower bed", "fountain", "pond"}):
-            return "park", 0.7
-        if any(kw in joined for kw in {"square", "plaza", "statue", "open area"}):
-            return "square", 0.7
-
-        # 餐厅/银行/办公室/学校
-        if any(kw in joined for kw in {"restaurant", "table", "chair", "dining", "menu", "waiter", "counter"}):
-            return "restaurant", 0.7
-        if any(kw in joined for kw in {"bank", "atm", "teller", "vault", "queue"}):
-            return "bank", 0.7
-        if any(kw in joined for kw in {"office", "desk", "computer", "printer", "cubicle"}):
-            return "office", 0.7
-        if any(kw in joined for kw in {"school", "classroom", "student", "blackboard", "campus"}):
-            return "school", 0.7
-
-        # 原有逻辑（保持兼容）
+        # 回退逻辑（基于简单启发式规则）
         if nset & {"car", "bus", "truck", "traffic light", "crosswalk"}:
             return "street", 0.6
         if nset & {"chair", "table", "sofa", "bed", "tv", "monitor"}:
@@ -532,8 +583,138 @@ class SemanticOutputEngine:
         dyn = 1.5 if k in DYNAMIC_CLASSES else 1.0
         return base * tw * sw * up * prox * dyn
 
-    def _avoidance(self, name: str, cx: float, w: int, distance_m: float) -> Tuple[str, str]:
-        k = (name or "").strip().lower()
+    def _best_previous_track(self, name: str, cx: float, cy: float, now_ts: float) -> Optional[Dict[str, float]]:
+        name_lc = (name or "").strip().lower()
+        history = self._track_cache.get(name_lc) or []
+        best = None
+        best_dist = float("inf")
+        for item in history:
+            dt = now_ts - float(item.get("ts", 0.0) or 0.0)
+            if dt <= 0.0 or dt > self.motion_dt_max:
+                continue
+            dx = cx - float(item.get("cx", cx) or cx)
+            dy = cy - float(item.get("cy", cy) or cy)
+            d = math.hypot(dx, dy)
+            if d < best_dist:
+                best_dist = d
+                best = item
+        return best
+
+    def _estimate_motion_features(
+        self, name: str, cx: float, cy: float, area_ratio: float, now_ts: float, frame_w: int, frame_h: int
+    ) -> Tuple[float, float, str]:
+        prev = self._best_previous_track(name, cx, cy, now_ts)
+        if prev is None:
+            return 0.0, 0.0, "unknown"
+
+        dt = max(1e-6, now_ts - float(prev.get("ts", now_ts) or now_ts))
+        dx = cx - float(prev.get("cx", cx) or cx)
+        dy = cy - float(prev.get("cy", cy) or cy)
+        da = float(area_ratio) - float(prev.get("area_ratio", area_ratio) or area_ratio)
+
+        diag = max(1.0, math.hypot(float(frame_w), float(frame_h)))
+        speed_norm = min(1.0, (math.hypot(dx, dy) / dt) / (diag * max(1e-6, self.motion_px_norm)))
+        approach_rate = da / dt
+
+        if abs(dx) >= abs(dy):
+            lateral = "right" if dx > 0 else "left"
+        else:
+            lateral = "down" if dy > 0 else "up"
+
+        if approach_rate > 0.015:
+            motion = f"approaching_{lateral}"
+        elif approach_rate < -0.015:
+            motion = f"receding_{lateral}"
+        else:
+            motion = lateral
+
+        return speed_norm, approach_rate, motion
+
+    def _estimate_occlusion_factor(self, idx: int, items: List[Dict[str, Any]], frame_w: int, frame_h: int) -> float:
+        cur = items[idx]
+        bbox = cur.get("bbox")
+        if not bbox or len(bbox) != 4:
+            return 0.0
+
+        max_iou = 0.0
+        for j, other in enumerate(items):
+            if j == idx:
+                continue
+            ob = other.get("bbox")
+            if not ob or len(ob) != 4:
+                continue
+            max_iou = max(max_iou, _iou([float(x) for x in bbox], [float(x) for x in ob]))
+
+        x1, y1, x2, y2 = [float(v) for v in bbox]
+        edge_margin = min(x1, y1, max(0.0, frame_w - x2), max(0.0, frame_h - y2))
+        clipped_bonus = 0.2 if edge_margin <= 0.01 * max(frame_w, frame_h) else 0.0
+        return max(0.0, min(1.0, max_iou + clipped_bonus))
+
+    def _compute_risk_factors(
+        self,
+        name: str,
+        distance_m: float,
+        speed_norm: float,
+        approach_rate: float,
+        bbox: Optional[List[float]],
+        frame_h: int,
+        occlusion_factor: float,
+    ) -> Dict[str, float]:
+        distance_factor = max(0.0, min(1.0, 1.0 - min(float(distance_m), 8.0) / 8.0))
+        speed_factor = max(0.0, min(1.0, float(speed_norm)))
+        approach_factor = max(0.0, min(1.0, max(0.0, float(approach_rate)) / 0.08))
+
+        height_factor = 0.0
+        support_factor = 0.0
+        if bbox and len(bbox) == 4 and frame_h > 0:
+            _, y1, _, y2 = [float(v) for v in bbox]
+            center_y = (y1 + y2) * 0.5 / float(frame_h)
+            bottom_ratio = y2 / float(frame_h)
+            # 中上部物体（头部高度附近）风险更高
+            height_factor = max(0.0, min(1.0, 1.0 - abs(center_y - 0.45) / 0.45))
+            # 底部离地越远，支撑越弱，风险越高
+            support_factor = max(0.0, min(1.0, (0.9 - bottom_ratio) / 0.9))
+
+        dynamic_bonus = 0.12 if (name or "").strip().lower() in DYNAMIC_CLASSES else 0.0
+        return {
+            "distance": distance_factor,
+            "speed": speed_factor,
+            "approach": approach_factor,
+            "height": height_factor,
+            "support": support_factor,
+            "occlusion": max(0.0, min(1.0, float(occlusion_factor))),
+            "dynamic_bonus": dynamic_bonus,
+        }
+
+    def _risk_from_factors(self, factors: Dict[str, float]) -> float:
+        risk = (
+            0.30 * float(factors.get("distance", 0.0))
+            + 0.20 * float(factors.get("approach", 0.0))
+            + 0.16 * float(factors.get("speed", 0.0))
+            + 0.12 * float(factors.get("height", 0.0))
+            + 0.12 * float(factors.get("support", 0.0))
+            + 0.10 * float(factors.get("occlusion", 0.0))
+            + float(factors.get("dynamic_bonus", 0.0))
+        )
+        return max(0.0, min(1.0, risk))
+
+    def _infer_urgency(self, name: str, distance_m: float, risk_score: float, motion_dir: str) -> str:
+        urgency = "LOW"
+        if risk_score >= 0.72:
+            urgency = "HIGH"
+        elif risk_score >= 0.45:
+            urgency = "MEDIUM"
+
+        name_lc = (name or "").strip().lower()
+        if name_lc in DYNAMIC_CLASSES and distance_m <= 2.0 and motion_dir.startswith("approaching_"):
+            urgency = "HIGH"
+        elif distance_m <= 1.2 and urgency == "LOW":
+            urgency = "MEDIUM"
+        return urgency
+
+    def _avoidance(
+        self, name: str, cx: float, w: int, distance_m: float, risk_score: float, motion_dir: str, support_factor: float
+    ) -> Tuple[str, str]:
         x_ratio = cx / max(1.0, float(w))
         side = "center"
         if x_ratio < 0.4:
@@ -541,31 +722,58 @@ class SemanticOutputEngine:
         elif x_ratio > 0.6:
             side = "right"
 
-        urgent = "LOW"
-        if k in DYNAMIC_CLASSES and distance_m <= 2.5:
-            urgent = "HIGH"
-        elif distance_m <= 1.5:
-            urgent = "MEDIUM"
+        urgency = self._infer_urgency(name, distance_m, risk_score, motion_dir)
 
-        if urgent == "HIGH":
-            return "先停一下，注意避让。", urgent
+        if support_factor >= 0.75 and urgency in ("HIGH", "MEDIUM"):
+            return "注意头部高度，稍微低头并从侧面绕行。", urgency
+        if urgency == "HIGH":
+            return "先停一下，注意避让。", urgency
+        if motion_dir == "approaching_left":
+            return "从右侧绕开。", urgency
+        if motion_dir == "approaching_right":
+            return "从左侧绕开。", urgency
         if side == "left":
-            return "从右侧绕开。", urgent
+            return "从右侧绕开。", urgency
         if side == "right":
-            return "从左侧绕开。", urgent
-        return "稍微向右侧避让。", urgent
+            return "从左侧绕开。", urgency
+        return "稍微向右侧避让。", urgency
 
-    def _relations(self, objs: List[SemanticObject], w: int) -> List[SemanticObject]:
+    def _relations(self, objs: List[SemanticObject], w: int, h: int) -> List[SemanticObject]:
         if len(objs) < 2:
             return objs
-        # 只给 Top1 附加与 Top2 的关系，避免啰嗦
+        # 给 Top1 附加与 Top2/Top3 的方位关系 + 前后关系，避免三物体关系混乱
         a = objs[0]
-        b = objs[1]
-        dx = a.center_x - b.center_x
-        if abs(dx) > 0.18 * w:
-            rel = f"{_zh_name(a.name)}在{_zh_name(b.name)}的{'左侧' if dx < 0 else '右侧'}"
-            a.relations = [rel]
+        relations: List[str] = []
+        for b in objs[1:3]:
+            dx = a.center_x - b.center_x
+            if abs(dx) > 0.18 * w:
+                relations.append(f"{_zh_name(a.name)}在{_zh_name(b.name)}的{'左侧' if dx < 0 else '右侧'}")
+
+            if a.bbox and b.bbox and _iou(a.bbox, b.bbox) >= self.occlusion_iou_thr:
+                a_front = (a.area_ratio >= b.area_ratio * 1.08) or (a.center_y > b.center_y + 0.04 * h)
+                if a_front:
+                    relations.append(f"{_zh_name(a.name)}在{_zh_name(b.name)}前方")
+                else:
+                    relations.append(f"{_zh_name(a.name)}在{_zh_name(b.name)}后方")
+
+        if relations:
+            a.relations = relations[:2]
         return objs
+
+    def _update_track_cache(self, items: List[Dict[str, Any]], now_ts: float):
+        for o in items:
+            name = str(o.get("name", "")).strip().lower()
+            if not name:
+                continue
+            self._track_cache[name].append(
+                {
+                    "ts": now_ts,
+                    "cx": float(o.get("center_x", 0.0) or 0.0),
+                    "cy": float(o.get("center_y", 0.0) or 0.0),
+                    "area_ratio": float(o.get("area_ratio", 0.0) or 0.0),
+                }
+            )
+            self._track_cache[name] = self._track_cache[name][-8:]
 
     def build_semantic_objects(
         self,
@@ -579,10 +787,7 @@ class SemanticOutputEngine:
         输入 raw_objects（推荐来自 obstacle_detector_client.detect）：
         {'name','conf','bbox','area_ratio','center_x','center_y',...}
         """
-        names = [str(o.get("name", "")).strip().lower() for o in (raw_objects or [])]
-        scene, scene_confidence = self.infer_scene_with_confidence(names, mean_luma=mean_luma)
-
-        scored = []
+        prepared: List[Dict[str, Any]] = []
         for o in raw_objects or []:
             name = str(o.get("name", "")).strip()
             if not name:
@@ -592,15 +797,92 @@ class SemanticOutputEngine:
                 conf_f = float(conf) if conf is not None else 0.5
             except Exception:
                 conf_f = 0.5
+            if conf_f < self.conf_threshold:
+                continue
+            prepared.append({**o, "name": name, "conf": conf_f})
+
+        names = [str(o.get("name", "")).strip().lower() for o in prepared]
+        scene, scene_confidence = self.infer_scene_with_confidence(names, mean_luma=mean_luma)
+
+        scored = []
+        for o in prepared:
+            name = str(o.get("name", "")).strip()
+            if not name:
+                continue
+            conf_f = float(o.get("conf", 0.5) or 0.5)
             ar = float(o.get("area_ratio", 0.0) or 0.0)
             score = self._compute_score(name, conf_f, ar, scene)
-            scored.append({**o, "score": score})
+            scored.append({**o, "score": score, "risk_score": 0.0})
 
         scored = self._dedup_objects(scored)
         scored.sort(key=lambda x: float(x.get("score", 0.0)), reverse=True)
+        stage1 = scored[: max(1, self.stage1_topk)]
+
+        now_ts = time.time()
+        candidates: List[Dict[str, Any]] = []
+        for o in stage1:
+            name = str(o.get("name", "")).strip()
+            cx = float(o.get("center_x", frame_w / 2.0))
+            cy = float(o.get("center_y", frame_h / 2.0))
+            ar = float(o.get("area_ratio", 0.0) or 0.0)
+            conf_f = float(o.get("conf", 0.5) or 0.5)
+            bbox = list(o.get("bbox")) if isinstance(o.get("bbox"), (list, tuple)) and len(o.get("bbox")) == 4 else None
+
+            speed_norm, approach_rate, motion_dir = self._estimate_motion_features(
+                name=name, cx=cx, cy=cy, area_ratio=ar, now_ts=now_ts, frame_w=frame_w, frame_h=frame_h
+            )
+            dist_m = _estimate_distance_m(ar)
+            candidates.append(
+                {
+                    **o,
+                    "name": name,
+                    "conf": conf_f,
+                    "bbox": bbox,
+                    "center_x": cx,
+                    "center_y": cy,
+                    "area_ratio": ar,
+                    "distance_m": dist_m,
+                    "speed_norm": speed_norm,
+                    "approach_rate": approach_rate,
+                    "motion_dir": motion_dir,
+                }
+            )
+
+        for i, item in enumerate(candidates):
+            item["occlusion_factor"] = self._estimate_occlusion_factor(i, candidates, frame_w, frame_h)
+
+            factors = self._compute_risk_factors(
+                name=str(item.get("name", "")),
+                distance_m=float(item.get("distance_m", 0.0) or 0.0),
+                speed_norm=float(item.get("speed_norm", 0.0) or 0.0),
+                approach_rate=float(item.get("approach_rate", 0.0) or 0.0),
+                bbox=(item.get("bbox") if isinstance(item.get("bbox"), list) else None),
+                frame_h=frame_h,
+                occlusion_factor=float(item.get("occlusion_factor", 0.0) or 0.0),
+            )
+            risk_score = self._risk_from_factors(factors)
+            action, urgency = self._avoidance(
+                name=str(item.get("name", "")),
+                cx=float(item.get("center_x", frame_w / 2.0)),
+                w=frame_w,
+                distance_m=float(item.get("distance_m", 0.0) or 0.0),
+                risk_score=risk_score,
+                motion_dir=str(item.get("motion_dir", "unknown")),
+                support_factor=float(factors.get("support", 0.0)),
+            )
+            item["risk_factors"] = factors
+            item["risk_score"] = risk_score
+            item["urgency"] = urgency
+            item["avoidance_action"] = action
+
+        stage2 = sorted(
+            candidates,
+            key=lambda x: (float(x.get("risk_score", 0.0) or 0.0), float(x.get("score", 0.0) or 0.0)),
+            reverse=True,
+        )[: max(1, self.stage2_topk)]
 
         sem_objs: List[SemanticObject] = []
-        for o in scored[:10]:
+        for o in stage2:
             name = str(o.get("name", "")).strip()
             cx = float(o.get("center_x", frame_w / 2.0))
             cy = float(o.get("center_y", frame_h / 2.0))
@@ -613,8 +895,7 @@ class SemanticOutputEngine:
             else:
                 lr = "left" if cx < frame_w * 0.4 else ("right" if cx > frame_w * 0.6 else "center")
                 lr_zh = "左侧" if lr == "left" else ("右侧" if lr == "right" else "前方")
-            dist_m = _estimate_distance_m(ar)
-            avoidance, urgency = self._avoidance(name, cx, frame_w, dist_m)
+            dist_m = float(o.get("distance_m", _estimate_distance_m(ar)) or 0.0)
             sem_objs.append(
                 SemanticObject(
                     name=name,
@@ -629,26 +910,41 @@ class SemanticOutputEngine:
                     lr=lr,
                     lr_zh=lr_zh,
                     distance_m=dist_m,
-                    urgency=urgency,
-                    avoidance_action=avoidance,
+                    urgency=str(o.get("urgency", "LOW")),
+                    avoidance_action=str(o.get("avoidance_action", "稍微向右侧避让。")),
                     relations=[],
+                    risk_score=float(o.get("risk_score", 0.0) or 0.0),
+                    risk_factors=dict(o.get("risk_factors") or {}),
+                    motion_dir=str(o.get("motion_dir", "unknown")),
+                    speed_norm=float(o.get("speed_norm", 0.0) or 0.0),
                     frame_w=frame_w,
                     frame_h=frame_h,
                 )
             )
 
-        sem_objs = self._relations(sem_objs, frame_w)
+        sem_objs = self._relations(sem_objs, frame_w, frame_h)
+        sem_objs.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
 
-        topk = sem_objs[:3]
+        topk = sem_objs[: max(1, self.output_topk)]
         is_dynamic = any((o.name or "").strip().lower() in DYNAMIC_CLASSES and o.distance_m <= 3.0 for o in topk)
         if imu_yaw_rate_dps is not None and abs(float(imu_yaw_rate_dps)) >= self.turn_rate_thr_dps:
             is_dynamic = True
+
+        self._update_track_cache(stage1, now_ts)
 
         return {
             "scene": scene,
             "scene_confidence": scene_confidence,
             "is_dynamic": is_dynamic,
             "objects": topk,
+            "pipeline": {
+                "raw": len(raw_objects or []),
+                "conf_filtered": len(prepared),
+                "stage1": len(stage1),
+                "stage2": len(stage2),
+                "output": len(topk),
+                "conf_threshold": self.conf_threshold,
+            },
         }
 
     def render_text(self, sem: Dict[str, Any], use_steps: bool = True) -> str:
@@ -753,12 +1049,13 @@ class SemanticOutputEngine:
         turning = False
         if imu_yaw_rate_dps is not None and abs(float(imu_yaw_rate_dps)) >= self.turn_rate_thr_dps:
             turning = True
-            has_high = any((o.get("urgency") == "HIGH") for o in (sem.get("objects") or []))
+            has_high = any((getattr(o, "urgency", "LOW") == "HIGH") for o in (sem.get("objects") or []))
             if not has_high:
                 should_speak = False
 
         scene = sem.get("scene", "unknown")
         scene_confidence = float(sem.get("scene_confidence", 0.5) or 0.5)
+        pipeline = dict(sem.get("pipeline") or {})
 
         use_structured = STRUCTURED_VOICE_AVAILABLE and os.getenv("AIGLASS_USE_STRUCTURED_VOICE", "1") == "1"
 
@@ -842,10 +1139,20 @@ class SemanticOutputEngine:
             svo.text = text
 
             out = svo.to_dict()
+            sem_objects = list(sem.get("objects") or [])
+            for idx, obj in enumerate(out.get("objects") or []):
+                if idx >= len(sem_objects):
+                    break
+                so = sem_objects[idx]
+                obj["risk_score"] = float(getattr(so, "risk_score", 0.0) or 0.0)
+                obj["risk_factors"] = dict(getattr(so, "risk_factors", {}) or {})
+                obj["motion_dir"] = str(getattr(so, "motion_dir", "unknown") or "unknown")
+                obj["speed_norm"] = float(getattr(so, "speed_norm", 0.0) or 0.0)
             out["text"] = text
             out["should_speak"] = should_speak
             out["priority"] = svo.priority
             out["use_steps"] = use_steps
+            out["pipeline"] = pipeline
             return out
 
         # schema_version=2 的结构化输出
@@ -881,6 +1188,7 @@ class SemanticOutputEngine:
                 "should_speak": should_speak,
                 "priority": 100 if any(o.get("urgency") == "HIGH" for o in objects_v2) else 50,
                 "use_steps": use_steps,
+                "pipeline": pipeline,
             }
 
         # schema_version=1 的旧版输出（保持兼容）
@@ -898,6 +1206,7 @@ class SemanticOutputEngine:
             "objects": [o.to_dict() for o in (sem.get("objects") or [])],
             "text": text,
             "should_speak": should_speak,
+            "pipeline": pipeline,
         }
 
 

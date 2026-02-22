@@ -260,6 +260,13 @@ class PiperTTS:
         """检查预热是否完成"""
         return self._warmup_done
 
+    @staticmethod
+    def _has_speakable_content(text: str) -> bool:
+        """过滤纯标点/空白文本，避免无效 TTS 调用。"""
+        if not text:
+            return False
+        return any(ch.isalnum() for ch in text)
+
     def get_cache_stats(self) -> Dict[str, any]:
         """获取缓存统计信息"""
         with self._cache_lock:
@@ -287,7 +294,7 @@ class PiperTTS:
 
         # 清理文本
         text = text.strip()
-        if not text:
+        if not text or not self._has_speakable_content(text):
             return None
 
         # 使用临时文件
@@ -338,6 +345,10 @@ class PiperTTS:
             bytes: PCM16 音频数据，失败返回 None
         """
         if not self._available:
+            return None
+
+        text = (text or "").strip()
+        if not text or not self._has_speakable_content(text):
             return None
 
         # 先尝试从缓存获取（缓存未命中时会生成并写入）

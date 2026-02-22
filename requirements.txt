@@ -38,9 +38,10 @@ opencv-contrib-python==4.8.1.78  # Extended OpenCV modules
 # pybluez>=0.23  # Python 蓝牙库
 # pulsectl>=23.0.0  # PulseAudio 控制
 
-# TTS 文字转语音（可选）
-# piper-tts>=1.2.0  # 轻量神经 TTS
-# onnxruntime>=1.16.0  # Piper-TTS 依赖
+# TTS 文字转语音（可选，但建议启用以支持任意文本播报）
+piper-tts>=1.2.0  # 轻量神经 TTS
+onnxruntime>=1.16.0  # Piper-TTS 依赖
+pathvalidate>=3.0.0  # Piper-TTS 依赖（文件路径验证）
 
 # Optional Performance Optimizations
 # Uncomment if needed:

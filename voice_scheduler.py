@@ -9,6 +9,9 @@ import logging
 from typing import Dict, Optional, Callable
 from collections import deque
 from dataclasses import dataclass, field
+from threading import Lock
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +69,7 @@ class VoiceScheduler:
             'skipped_cooldown': 0,
             'skipped_preempted': 0,
         }
+        self._lock = Lock()
 
         logger.info("[VoiceScheduler] 语音调度器已初始化")
 
@@ -88,24 +92,33 @@ class VoiceScheduler:
         if not text:
             return False
 
-        # 检查节流
-        if cooldown_key and cooldown_key in self.cooldown_history:
-            last_time = self.cooldown_history[cooldown_key]
-            if time.time() - last_time < min_interval:
-                logger.debug(f"[VoiceScheduler] 消息被节流: {text[:20]}...")
-                self.stats['skipped_cooldown'] += 1
-                return False
+        with self._lock:
+            # 检查节流
+            if cooldown_key and cooldown_key in self.cooldown_history:
+                last_time = self.cooldown_history[cooldown_key]
+                if time.time() - last_time < min_interval:
+                    logger.debug(f"[VoiceScheduler] 消息被节流: {text[:20]}...")
+                    self.stats['skipped_cooldown'] += 1
+                    return False
 
-        message = VoiceMessage(
-            text=text,
-            priority=priority,
-            cooldown_key=cooldown_key,
-            min_interval=min_interval
-        )
+            message = VoiceMessage(
+                text=text,
+                priority=priority,
+                cooldown_key=cooldown_key,
+                min_interval=min_interval
+            )
 
-        # 根据优先级决定插入位置
-        self._insert_by_priority(message)
-        self.stats['queued'] += 1
+            # 高优先级抢占：直接清理当前队列里的低优先级消息
+            if priority >= self.P0_HEAD_OBSTACLE and self.queue:
+                original_size = len(self.queue)
+                self.queue = deque([m for m in self.queue if m.priority >= priority])
+                cleared = original_size - len(self.queue)
+                if cleared > 0:
+                    self.stats['skipped_preempted'] += cleared
+
+            # 根据优先级决定插入位置
+            self._insert_by_priority(message)
+            self.stats['queued'] += 1
 
         logger.debug(f"[VoiceScheduler] 消息已排队 (P{priority}): {text[:30]}...")
         return True
@@ -138,34 +151,35 @@ class VoiceScheduler:
         if not self.play_callback:
             return None
 
-        # 如果正在播放，等待播放完成（这里简化处理，实际可能需要回调通知）
-        if self.current_message:
-            # 假设播放很快完成，清空当前消息
-            self.current_message = None
+        with self._lock:
+            # 如果正在播放，等待播放完成（这里简化处理，实际可能需要回调通知）
+            if self.current_message:
+                # 假设播放很快完成，清空当前消息
+                self.current_message = None
 
-        # 检查队列
-        if not self.queue:
-            return None
-
-        # 获取队首消息
-        message = self.queue[0]
-
-        # 再次检查节流（可能在排队过程中条件变化）
-        if message.cooldown_key and message.cooldown_key in self.cooldown_history:
-            last_time = self.cooldown_history[message.cooldown_key]
-            if time.time() - last_time < message.min_interval:
-                # 跳过该消息
-                self.queue.popleft()
-                self.stats['skipped_cooldown'] += 1
+            # 检查队列
+            if not self.queue:
                 return None
 
-        # 从队列移除
-        self.queue.popleft()
-        self.current_message = message
+            # 获取队首消息
+            message = self.queue[0]
 
-        # 更新节流记录
-        if message.cooldown_key:
-            self.cooldown_history[message.cooldown_key] = time.time()
+            # 再次检查节流（可能在排队过程中条件变化）
+            if message.cooldown_key and message.cooldown_key in self.cooldown_history:
+                last_time = self.cooldown_history[message.cooldown_key]
+                if time.time() - last_time < message.min_interval:
+                    # 跳过该消息
+                    self.queue.popleft()
+                    self.stats['skipped_cooldown'] += 1
+                    return None
+
+            # 从队列移除
+            self.queue.popleft()
+            self.current_message = message
+
+            # 更新节流记录
+            if message.cooldown_key:
+                self.cooldown_history[message.cooldown_key] = time.time()
 
         # 播报
         self.stats['played'] += 1
@@ -176,6 +190,24 @@ class VoiceScheduler:
 
         logger.debug(f"[VoiceScheduler] 播报 (P{message.priority}): {message.text[:30]}...")
         return message.text
+
+    def schedule_and_tick(
+        self,
+        text: str,
+        priority: int = P3_AI_CHAT,
+        cooldown_key: Optional[str] = None,
+        min_interval: float = 0.0,
+    ) -> bool:
+        """便捷接口：入队后立即驱动一次调度。"""
+        ok = self.schedule(
+            text=text,
+            priority=priority,
+            cooldown_key=cooldown_key,
+            min_interval=min_interval,
+        )
+        if ok:
+            self.tick()
+        return ok
 
     def clear(self):
         """清空队列"""
