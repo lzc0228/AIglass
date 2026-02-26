@@ -167,6 +167,10 @@ def _clock_dir(cx: float, cy: float, w: int, h: int) -> int:
     return int(hours[idx])
 
 
+def _angle_diff_deg(a: float, b: float) -> float:
+    return abs((float(a) - float(b) + 180.0) % 360.0 - 180.0)
+
+
 def _dir_zh(hour: int) -> str:
     # 更口语的方向提示（辅助信息，主信息仍保留钟点）
     if hour in (11, 12, 1):
@@ -561,6 +565,10 @@ class SemanticOutputEngine:
         self.low_fence_center_y_min = float(os.getenv("AIGLASS_LOW_FENCE_CENTER_Y_MIN", "0.56"))
         self.low_fence_height_max_ratio = float(os.getenv("AIGLASS_LOW_FENCE_HEIGHT_MAX_RATIO", "0.42"))
         self.low_fence_risk_floor = float(os.getenv("AIGLASS_LOW_FENCE_RISK_FLOOR", "0.50"))
+        self.focus_gaze_hold_sec = float(os.getenv("AIGLASS_FOCUS_GAZE_HOLD_SEC", "2.0"))
+        self.focus_yaw_rate_max_dps = float(os.getenv("AIGLASS_FOCUS_YAW_RATE_MAX_DPS", "6.0"))
+        self.focus_yaw_hold_deg = float(os.getenv("AIGLASS_FOCUS_YAW_HOLD_DEG", "9.0"))
+        self.focus_motion_max = float(os.getenv("AIGLASS_FOCUS_MOTION_MAX", "0.08"))
 
         # 稳定性指标（WP4 会进一步结合 IMU）
         self.prev_signature: Optional[str] = None
@@ -568,6 +576,9 @@ class SemanticOutputEngine:
         self._track_cache: Dict[str, List[Dict[str, float]]] = defaultdict(list)
         self._last_stair_hint: Optional[Dict[str, Any]] = None
         self._last_turnstile_hint: Optional[Dict[str, Any]] = None
+        self._focus_anchor_ts: Optional[float] = None
+        self._focus_anchor_yaw: Optional[float] = None
+        self._focus_active: bool = False
         self.scene_strategies = list(self._SCENE_STRATEGIES)
         self._load_scene_strategies()
 
@@ -1493,6 +1504,53 @@ class SemanticOutputEngine:
         out.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
         return out
 
+    def _update_focus_mode_state(
+        self,
+        objs: List[SemanticObject],
+        imu_yaw_deg: Optional[float],
+        imu_yaw_rate_dps: Optional[float],
+    ) -> Tuple[bool, float, float]:
+        now_ts = time.time()
+        sem_objs = list(objs or [])
+        if not sem_objs:
+            self._focus_active = False
+            self._focus_anchor_ts = now_ts
+            if imu_yaw_deg is not None:
+                self._focus_anchor_yaw = float(imu_yaw_deg)
+            return False, 0.0, 0.0
+
+        speeds = [max(0.0, float(getattr(o, "speed_norm", 0.0) or 0.0)) for o in sem_objs[:3]]
+        avg_motion = (sum(speeds) / len(speeds)) if speeds else 0.0
+
+        yaw_rate = 0.0
+        yaw_stable = True
+        if imu_yaw_rate_dps is not None:
+            yaw_rate = abs(float(imu_yaw_rate_dps))
+            yaw_stable = yaw_rate <= self.focus_yaw_rate_max_dps
+
+        if imu_yaw_deg is not None:
+            cur_yaw = float(imu_yaw_deg)
+            if self._focus_anchor_yaw is None or self._focus_anchor_ts is None:
+                self._focus_anchor_yaw = cur_yaw
+                self._focus_anchor_ts = now_ts
+            elif _angle_diff_deg(cur_yaw, self._focus_anchor_yaw) > self.focus_yaw_hold_deg:
+                self._focus_anchor_yaw = cur_yaw
+                self._focus_anchor_ts = now_ts
+        elif self._focus_anchor_ts is None:
+            self._focus_anchor_ts = now_ts
+
+        hold_sec = max(0.0, now_ts - float(self._focus_anchor_ts or now_ts))
+        stable = yaw_stable and (avg_motion <= self.focus_motion_max)
+        if not stable:
+            self._focus_active = False
+            self._focus_anchor_ts = now_ts
+            if imu_yaw_deg is not None:
+                self._focus_anchor_yaw = float(imu_yaw_deg)
+            return False, 0.0, avg_motion
+
+        self._focus_active = hold_sec >= self.focus_gaze_hold_sec
+        return self._focus_active, hold_sec, avg_motion
+
     def _pair_distance_norm(
         self,
         a: Dict[str, Any],
@@ -2027,11 +2085,31 @@ class SemanticOutputEngine:
             return "我没看到明显的关键障碍，前方看起来比较空。"
 
         dynamic = bool(sem.get("is_dynamic", False))
+        focused_mode = bool(sem.get("focused_mode", False))
         scene = str(sem.get("scene") or "unknown")
         scene_zh = self.get_scene_zh(scene)
 
         # 危险等级前缀
         urgency_word = {"HIGH": "紧急", "MEDIUM": "注意", "LOW": ""}
+
+        if focused_mode:
+            forward_hours = {10, 11, 12, 1, 2}
+            forward_objs = [o for o in objs if int(getattr(o, "clock", 12)) in forward_hours]
+            if not forward_objs:
+                forward_objs = objs[:3]
+            detail_objs = forward_objs[:3]
+            parts = []
+            for o in detail_objs:
+                if use_steps:
+                    steps = int(round(float(o.distance_m) / 0.6))
+                    dist_txt = f"{max(1, steps)}步"
+                else:
+                    meters_i = max(1, int(round(float(o.distance_m))))
+                    dist_txt = f"{meters_i}米"
+                action = (o.avoidance_action or "").rstrip("。")
+                parts.append(f"{o.clock}点方向({o.lr_zh})约{dist_txt}有{_zh_name(o.name)}，{action}")
+            scene_prefix = f"{scene_zh}，" if scene_zh else ""
+            return f"{scene_prefix}重点观察前方：{'；'.join(parts)}。"
 
         # 动态环境：先避险、后补充
         if dynamic:
@@ -2112,6 +2190,14 @@ class SemanticOutputEngine:
         sem = self.build_semantic_objects(
             raw_objects, frame_w, frame_h, mean_luma=mean_luma, imu_yaw_rate_dps=imu_yaw_rate_dps
         )
+        focus_mode, focus_hold_sec, focus_avg_motion = self._update_focus_mode_state(
+            sem.get("objects") or [],
+            imu_yaw_deg=imu_yaw_deg,
+            imu_yaw_rate_dps=imu_yaw_rate_dps,
+        )
+        sem["focused_mode"] = bool(focus_mode)
+        sem["focus_hold_sec"] = float(focus_hold_sec)
+        sem["focus_avg_motion"] = float(focus_avg_motion)
         text = self.render_text(sem, use_steps=use_steps)
 
         sig = "|".join([f"{o.name}:{o.clock}:{int(o.distance_m*10)}" for o in (sem.get("objects") or [])]) or "empty"
@@ -2228,6 +2314,9 @@ class SemanticOutputEngine:
             out["should_speak"] = should_speak
             out["priority"] = svo.priority
             out["use_steps"] = use_steps
+            out["focused_mode"] = bool(sem.get("focused_mode", False))
+            out["focus_hold_sec"] = float(sem.get("focus_hold_sec", 0.0) or 0.0)
+            out["focus_avg_motion"] = float(sem.get("focus_avg_motion", 0.0) or 0.0)
             out["pipeline"] = pipeline
             return out
 
@@ -2264,6 +2353,9 @@ class SemanticOutputEngine:
                 "should_speak": should_speak,
                 "priority": 100 if any(o.get("urgency") == "HIGH" for o in objects_v2) else 50,
                 "use_steps": use_steps,
+                "focused_mode": bool(sem.get("focused_mode", False)),
+                "focus_hold_sec": float(sem.get("focus_hold_sec", 0.0) or 0.0),
+                "focus_avg_motion": float(sem.get("focus_avg_motion", 0.0) or 0.0),
                 "pipeline": pipeline,
             }
 
@@ -2282,6 +2374,9 @@ class SemanticOutputEngine:
             "objects": [o.to_dict() for o in (sem.get("objects") or [])],
             "text": text,
             "should_speak": should_speak,
+            "focused_mode": bool(sem.get("focused_mode", False)),
+            "focus_hold_sec": float(sem.get("focus_hold_sec", 0.0) or 0.0),
+            "focus_avg_motion": float(sem.get("focus_avg_motion", 0.0) or 0.0),
             "pipeline": pipeline,
         }
 

@@ -411,3 +411,33 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_low_fence_detection.py' -v` passed.
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_low_fence_detection.py` passed.
+
+## 2026-02-27 01:37 +0800 - Task #16 completed
+- Selected next pending task by AGENT order: `#16 Add stop-and-gaze (>=2s) focused description mode`.
+- Root-cause evidence:
+  - Semantic output previously had only dynamic/stable narration branches; no state for sustained stop-and-gaze.
+  - Output payloads had no focus-mode flags for downstream behavior/diagnostics.
+- Implemented task scope (`semantic_output.py`):
+  - Added stop-and-gaze focus state tracking:
+    - hold threshold (`focus_gaze_hold_sec`, default 2.0s)
+    - yaw stability thresholds (`focus_yaw_rate_max_dps`, `focus_yaw_hold_deg`)
+    - low-motion gate (`focus_motion_max`)
+    - persistent anchor state (`_focus_anchor_ts`, `_focus_anchor_yaw`, `_focus_active`)
+  - Added `_update_focus_mode_state(...)`:
+    - triggers focused mode when gaze is stable and low-motion hold exceeds threshold.
+    - resets/turns off focused mode on fast turning or unstable conditions.
+  - Added focused narration branch in `render_text(...)`:
+    - prioritized richer forward description with explicit prefix `重点观察前方`.
+  - Added focused metadata into all schema outputs:
+    - `focused_mode`
+    - `focus_hold_sec`
+    - `focus_avg_motion`
+- Added tests:
+  - `tests/test_semantic_stop_gaze_focus_mode.py`
+    - focused mode triggers after >=2s stable stop-and-gaze.
+    - turning state disables focused mode.
+    - focused mode uses richer forward text.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stop_gaze_focus_mode.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_stop_gaze_focus_mode.py` passed.

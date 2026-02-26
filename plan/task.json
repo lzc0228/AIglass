@@ -244,8 +244,8 @@
         "IMU/time-gated runtime test emits focused mode narration."
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 17,
