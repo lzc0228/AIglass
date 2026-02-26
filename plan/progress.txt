@@ -441,3 +441,25 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stop_gaze_focus_mode.py' -v` passed.
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_stop_gaze_focus_mode.py` passed.
+
+## 2026-02-27 01:41 +0800 - Task #17 completed
+- Selected next pending task by AGENT order: `#17 Recognize subway/bus station signs and text`.
+- Root-cause evidence:
+  - `text_reader.py` dispatch only covered `general/bus/restroom`, missing dedicated station mode.
+  - OCR text could show station cues, but no structured station classification (subway/bus) or station-direction message generation.
+- Implemented task scope (`text_reader.py`):
+  - Added `mode='station'` dispatch in `read_text(...)`.
+  - Added `_process_station_results(...)` station parser:
+    - recognizes subway/bus station keywords (中英混合),
+    - extracts line hints (`2号线` / `Line 3` -> `3号线`) and station-name tokens (`XX站`),
+    - detects entry/exit intent and generates direction via `_infer_direction_hint(...)`,
+    - outputs station-oriented messages (e.g., `地铁站/公交站 + 方向/出口`).
+- Added tests:
+  - `tests/test_text_reader_station_mode.py`
+    - subway station sign text recognized with station cue.
+    - bus station direction is generated.
+    - station exit direction is generated.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_station_mode.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_*.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile text_reader.py tests/test_text_reader_station_mode.py` passed.

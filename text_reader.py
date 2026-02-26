@@ -175,7 +175,7 @@ class TextReader:
         """
         从图像中读取文字
         :param image: BGR格式图像
-        :param mode: 'general' 通用识别 | 'bus' 公交车识别
+        :param mode: 'general' 通用识别 | 'bus' 公交车识别 | 'restroom' 卫生间 | 'station' 站点标识
         :return: {
             'success': bool,
             'texts': list,
@@ -208,6 +208,8 @@ class TextReader:
                 processed = self._process_bus_results(raw_results)
             elif mode == 'restroom':
                 processed = self._process_restroom_results(raw_results, image_shape=image.shape[:2])
+            elif mode == 'station':
+                processed = self._process_station_results(raw_results, image_shape=image.shape[:2])
             else:
                 processed = self._process_general_results(raw_results)
 
@@ -397,6 +399,117 @@ class TextReader:
         unique_texts = list(dict.fromkeys(texts))[: self.max_results]
         return {
             'texts': unique_texts,
+            'message': message
+        }
+
+    def _process_station_results(self, raw_results: List[Dict], image_shape: Optional[Tuple[int, int]] = None) -> Dict[str, Any]:
+        """处理地铁/公交站标识与方向提示。"""
+        filtered = [
+            r for r in (raw_results or [])
+            if str(r.get('text', '')).strip() and float(r.get('confidence', 0.0) or 0.0) >= self.min_confidence
+        ]
+        if not filtered:
+            return {
+                'texts': [],
+                'message': '没有识别到清晰的站点标识。'
+            }
+
+        subway_keywords = ['地铁', '地铁站', 'subway', 'metro', 'station', 'line', '号线', '轨道交通']
+        bus_keywords = ['公交', '公交站', '公交车站', 'bus stop', 'bus station', '站台', '乘车点']
+        entry_keywords = ['入口', 'entry', 'entrance', 'in', '进站']
+        exit_keywords = ['出口', 'exit', 'out', '出站']
+
+        frame_h = int(image_shape[0]) if image_shape and len(image_shape) > 0 else 0
+        frame_w = int(image_shape[1]) if image_shape and len(image_shape) > 1 else 0
+
+        subway_score = 0.0
+        bus_score = 0.0
+        station_texts: List[str] = []
+        line_tokens: List[str] = []
+        station_names: List[str] = []
+        cue_candidates: List[Tuple[float, str, str]] = []
+        station_dir_candidates: List[Tuple[float, str]] = []
+
+        for r in filtered:
+            text = str(r.get('text', '')).strip()
+            if not text:
+                continue
+            conf = float(r.get('confidence', 0.0) or 0.0)
+            norm = re.sub(r'\s+', '', text).lower()
+            station_texts.append(text)
+
+            has_subway = any(k in norm for k in subway_keywords)
+            has_bus = any(k in norm for k in bus_keywords)
+            if has_subway:
+                subway_score += conf
+            if has_bus:
+                bus_score += conf
+
+            if ('站' in text) and (not has_subway) and (not has_bus):
+                subway_score += conf * 0.55
+
+            for m in re.findall(r'([A-Za-z]?\d+\s*号线)', text):
+                token = re.sub(r'\s+', '', str(m))
+                if token and token not in line_tokens:
+                    line_tokens.append(token)
+            for m in re.findall(r'line\s*([A-Za-z]?\d+)', norm):
+                token = f"{str(m).upper()}号线"
+                if token not in line_tokens:
+                    line_tokens.append(token)
+
+            for m in re.findall(r'([\u4e00-\u9fa5A-Za-z0-9]{2,}站)', text):
+                name = str(m).strip()
+                if name not in station_names and name not in {'地铁站', '公交站', '车站'}:
+                    station_names.append(name)
+
+            cue_type = ''
+            if any(k in norm for k in exit_keywords):
+                cue_type = '出口'
+            elif any(k in norm for k in entry_keywords):
+                cue_type = '入口'
+
+            direction = self._infer_direction_hint(text, r.get('bbox'), frame_w, frame_h)
+            if cue_type:
+                cue_candidates.append((conf, cue_type, direction))
+            elif has_subway or has_bus:
+                station_dir_candidates.append((conf, direction))
+
+        if subway_score <= 0.0 and bus_score <= 0.0 and not station_names:
+            return {
+                'texts': list(dict.fromkeys(station_texts))[: self.max_results],
+                'message': '没有识别到清晰的站点标识。'
+            }
+
+        if subway_score >= bus_score:
+            station_label = '地铁站'
+        else:
+            station_label = '公交站'
+
+        cue_type = ''
+        cue_dir = ''
+        if cue_candidates:
+            cue_candidates.sort(key=lambda x: x[0], reverse=True)
+            cue_type, cue_dir = cue_candidates[0][1], cue_candidates[0][2]
+        elif station_dir_candidates:
+            station_dir_candidates.sort(key=lambda x: x[0], reverse=True)
+            cue_dir = station_dir_candidates[0][1]
+
+        line_hint = f"（{line_tokens[0]}）" if line_tokens else ''
+        station_hint = f"（{station_names[0]}）" if station_names else ''
+
+        if cue_type and cue_dir:
+            message = f"识别到{station_label}{line_hint or station_hint}，{cue_type}在{cue_dir}。"
+        elif cue_dir and cue_dir != '前方':
+            message = f"识别到{station_label}{line_hint or station_hint}，方向在{cue_dir}。"
+        elif station_hint:
+            message = f"识别到{station_label}{station_hint}{line_hint}。"
+        elif line_hint:
+            message = f"识别到{station_label}{line_hint}。"
+        else:
+            message = f"识别到{station_label}标识。"
+
+        return {
+            'texts': list(dict.fromkeys(station_texts))[: self.max_results],
             'message': message
         }
 

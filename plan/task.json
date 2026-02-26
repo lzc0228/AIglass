@@ -259,8 +259,8 @@
         "Station-related scenes produce correct station cues."
       ],
       "dependencies": [7],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 18,
