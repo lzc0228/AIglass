@@ -209,10 +209,12 @@ NAME_ZH = {
     "potted plant": "盆栽",
     "plant": "植物",
     "hydrant": "消防栓",
+    "fire hydrant": "消防栓",
     "cone": "锥桶",
     "stone": "石头",
     "box": "箱子",
     "signpost": "指示牌",
+    "tree": "树",
     "utility pole": "电线杆",
     "light pole": "路灯杆",
     "telegraph pole": "电线杆",
@@ -333,6 +335,24 @@ LABEL_ALIASES = {
     "planter": "potted plant",
     "pottedplant": "potted plant",
     "indoor plant": "potted plant",
+    "fire hydrant": "hydrant",
+    "hydrant post": "hydrant",
+    "street hydrant": "hydrant",
+    "sign post": "signpost",
+    "sign-post": "signpost",
+    "sign pole": "signpost",
+    "street sign": "signpost",
+    "road sign": "signpost",
+    "traffic sign": "signpost",
+    "tree trunk": "tree",
+    "tree-trunk": "tree",
+    "palm tree": "tree",
+    "street tree": "tree",
+    "telephone pole": "utility pole",
+    "lamp post": "light pole",
+    "lightpost": "light pole",
+    "posts": "post",
+    "poles": "pole",
     "ticketgate": "ticket gate",
     "faregate": "fare gate",
     "turn stile": "turnstile",
@@ -344,6 +364,23 @@ GLASS_STRUCTURE_CLASSES = {"glass_door", "glass_window"}
 GLASS_SURFACE_BASE_CLASSES = {"door", "window"}
 TURNSTILE_CLASSES = {"turnstile", "ticket gate", "fare gate"}
 TURNSTILE_SUPPORT_CLASSES = {"ticket machine", "barrier", "stanchion"}
+VERTICAL_STATIC_CLASSES = {
+    "pole",
+    "post",
+    "column",
+    "pillar",
+    "bollard",
+    "hydrant",
+    "tree",
+    "signpost",
+    "utility pole",
+    "telegraph pole",
+    "light pole",
+    "street pole",
+    "support post",
+    "vertical post",
+}
+VERTICAL_PRIORITY_SCENES = {"street", "sidewalk", "crossroad", "bus_stop", "park", "square", "construction"}
 INDOOR_SCENES = {
     "indoor",
     "corridor",
@@ -692,13 +729,18 @@ class SemanticOutputEngine:
         dyn = 1.5 if k in DYNAMIC_CLASSES else 1.0
         structure_bonus = 1.0
         indoor_plant_boost = 1.0
+        vertical_bonus = 1.0
         if k == "potted plant" and scene_lc in INDOOR_SCENES:
             indoor_plant_boost = 2.2 + min(1.8, max(0.0, float(area_ratio)) * 18.0)
+        if k in VERTICAL_STATIC_CLASSES:
+            vertical_bonus = 1.35 + min(0.4, max(0.0, float(area_ratio)) * 8.0)
+            if scene_lc in VERTICAL_PRIORITY_SCENES:
+                vertical_bonus *= 1.28
         if k in GLASS_STRUCTURE_CLASSES:
             structure_bonus = 1.25
         elif k in {"door_handle", "light_switch"}:
             structure_bonus = 1.08
-        return base * tw * sw * up * prox * dyn * structure_bonus * indoor_plant_boost
+        return base * tw * sw * up * prox * dyn * structure_bonus * indoor_plant_boost * vertical_bonus
 
     def _best_previous_track(self, name: str, cx: float, cy: float, now_ts: float) -> Optional[Dict[str, float]]:
         name_lc = self._normalize_object_name(name)
@@ -1149,6 +1191,49 @@ class SemanticOutputEngine:
         out.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
         return out
 
+    def _force_vertical_static_topk(
+        self,
+        topk: List[SemanticObject],
+        sem_objs: List[SemanticObject],
+    ) -> List[SemanticObject]:
+        out = list(topk or [])
+        if not out or not sem_objs:
+            return out
+
+        vertical_pool = [
+            o for o in sem_objs if self._normalize_object_name(getattr(o, "name", "")) in VERTICAL_STATIC_CLASSES
+        ]
+        if len(vertical_pool) < 2:
+            return out
+
+        vertical_pool = sorted(vertical_pool, key=lambda x: (x.risk_score, x.score), reverse=True)
+
+        def is_vertical(obj: SemanticObject) -> bool:
+            return self._normalize_object_name(getattr(obj, "name", "")) in VERTICAL_STATIC_CLASSES
+
+        vertical_count = sum(1 for o in out if is_vertical(o))
+        replace_iter = iter(vertical_pool)
+        while vertical_count < 2:
+            candidate = None
+            for item in replace_iter:
+                if item not in out:
+                    candidate = item
+                    break
+            if candidate is None:
+                break
+            replace_idx = None
+            for idx in range(len(out) - 1, -1, -1):
+                if not is_vertical(out[idx]):
+                    replace_idx = idx
+                    break
+            if replace_idx is None:
+                break
+            out[replace_idx] = candidate
+            vertical_count = sum(1 for o in out if is_vertical(o))
+
+        out.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
+        return out
+
     def _pair_distance_norm(
         self,
         a: Dict[str, Any],
@@ -1537,6 +1622,25 @@ class SemanticOutputEngine:
         stage2 = self._maybe_inject_stair_hint(stage2, prepared, frame_w, frame_h, now_ts)
         stage2 = self._maybe_inject_turnstile_hint(stage2, prepared, frame_w, frame_h, now_ts, scene)
         stage2 = self._enhance_stair_handrail_context(stage2, candidates, frame_w)
+        if any(self._normalize_object_name(str(x.get("name", ""))) in VERTICAL_STATIC_CLASSES for x in candidates):
+            vertical_best = None
+            for x in candidates:
+                if self._normalize_object_name(str(x.get("name", ""))) not in VERTICAL_STATIC_CLASSES:
+                    continue
+                if vertical_best is None:
+                    vertical_best = x
+                    continue
+                key_cur = (float(x.get("risk_score", 0.0) or 0.0), float(x.get("score", 0.0) or 0.0))
+                key_best = (
+                    float(vertical_best.get("risk_score", 0.0) or 0.0),
+                    float(vertical_best.get("score", 0.0) or 0.0),
+                )
+                if key_cur > key_best:
+                    vertical_best = x
+            if vertical_best is not None and not any(
+                self._normalize_object_name(str(o.get("name", ""))) in VERTICAL_STATIC_CLASSES for o in stage2
+            ):
+                stage2.append(dict(vertical_best))
         stage2 = sorted(
             stage2,
             key=lambda x: (float(x.get("risk_score", 0.0) or 0.0), float(x.get("score", 0.0) or 0.0)),
@@ -1589,6 +1693,7 @@ class SemanticOutputEngine:
 
         topk = sem_objs[: max(1, self.output_topk)]
         topk = self._force_stair_handrail_topk(topk, sem_objs)
+        topk = self._force_vertical_static_topk(topk, sem_objs)
         is_dynamic = any((o.name or "").strip().lower() in DYNAMIC_CLASSES and o.distance_m <= 3.0 for o in topk)
         if imu_yaw_rate_dps is not None and abs(float(imu_yaw_rate_dps)) >= self.turn_rate_thr_dps:
             is_dynamic = True

@@ -289,3 +289,35 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_distance_format.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_turnstile_persistence.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
+
+## 2026-02-27 01:14 +0800 - Task #12 completed
+- Selected next pending task by AGENT order: `#12 Improve poles/hydrants/bollards/trees/sign-post detection`.
+- Root-cause evidence:
+  - Vertical/static roadside classes had weak normalization coverage (`fire hydrant/sign post/tree trunk` not mapped to canonical names).
+  - These classes had relatively low score weights and were容易被通用家具类挤出输出。
+- Implemented task scope (`semantic_output.py`):
+  - Added target alias normalization:
+    - `fire hydrant -> hydrant`
+    - `sign post/sign pole/street sign/road sign/traffic sign -> signpost`
+    - `tree trunk/palm tree/... -> tree`
+    - plus related pole/post aliases.
+  - Added target class set/whitelist constants for vertical static hazards:
+    - `VERTICAL_STATIC_CLASSES`
+    - `VERTICAL_PRIORITY_SCENES`
+  - Added score boost policy for vertical static classes (especially street/sidewalk/park-like scenes).
+  - Added output safeguard so vertical static cues are retained in top-k when present.
+- Added tests:
+  - `tests/test_semantic_vertical_static_obstacles.py`
+    - alias normalization for hydrant/signpost/tree.
+    - vertical classes get higher priority than generic furniture under street scene scoring.
+    - mixed scene output keeps multiple target vertical classes.
+    - vertical static whitelist contains required target classes.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_vertical_static_obstacles.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_far_obstacle_policy.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_distance_format.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_turnstile_persistence.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_indoor_potted_plant.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stair_handrail_guidance.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stair_stability.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
