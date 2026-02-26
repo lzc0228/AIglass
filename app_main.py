@@ -395,6 +395,13 @@ def _build_realtime_object_announce_text(out: Dict[str, Any]) -> str:
     distance_text = ""
     if use_steps:
         steps = distance.get("steps") or top.get("distance_steps")
+        if steps is None:
+            meters = distance.get("meters") or top.get("distance_m")
+            if meters is not None:
+                try:
+                    steps = max(1, int(round(float(meters) / 0.6)))
+                except Exception:
+                    steps = None
         if steps is not None:
             try:
                 distance_text = f"约{max(1, int(round(float(steps))))}步"
@@ -404,8 +411,8 @@ def _build_realtime_object_announce_text(out: Dict[str, Any]) -> str:
         meters = distance.get("meters") or top.get("distance_m")
         if meters is not None:
             try:
-                m = float(meters)
-                distance_text = f"{m:.0f}米" if m >= 1 else f"{m:.1f}米"
+                m = max(1, int(round(float(meters))))
+                distance_text = f"{m}米"
             except Exception:
                 distance_text = ""
 

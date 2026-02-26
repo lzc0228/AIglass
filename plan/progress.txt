@@ -243,3 +243,26 @@
 - Verification:
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_blindpath_mask_stability.py' -v` passed.
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile workflow_blindpath.py` passed.
+
+## 2026-02-27 01:07 +0800 - Task #10 completed
+- Selected next pending task by AGENT order: `#10 Distance broadcast without decimals, prefer steps`.
+- Root-cause evidence:
+  - Semantic narration had duplicated distance prefix (`约约X步`) due template concatenation.
+  - Realtime announce meter fallback could produce fractional meter wording in legacy branch.
+- Implemented task scope:
+  - `semantic_output.py`
+    - unified distance wording generation: integer-only values.
+    - default step wording remains preferred; fixed duplicate prefix bug (`约X步`, no `约约`).
+    - non-step mode meter wording now integer-only (`N米`).
+  - `app_main.py`
+    - realtime object announce path keeps step preference and meter->steps fallback.
+    - meter mode now uses integer-only meters.
+- Added tests:
+  - `tests/test_semantic_distance_format.py`
+    - default narration prefers steps, no duplicate prefix, no decimal numbers.
+    - meter mode uses integer meters only.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_distance_format.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_turnstile_persistence.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile app_main.py` passed.

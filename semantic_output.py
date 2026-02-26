@@ -1620,16 +1620,16 @@ class SemanticOutputEngine:
             o = objs[0]
             if use_steps:
                 steps = int(round(o.distance_m / 0.6))
-                dist_txt = f"约{steps}步"
+                dist_txt = f"{max(1, steps)}步"
             else:
-                d = o.distance_m
-                dist_txt = f"{d:.0f}米" if d >= 1.0 else f"{d:.1f}米"
+                meters_i = max(1, int(round(float(o.distance_m))))
+                dist_txt = f"{meters_i}米"
             ur = urgency_word.get(o.urgency, "注意")
             prefix = f"{ur}，" if ur else ""
             action = (o.avoidance_action or "").rstrip("。")
             direction = f"{o.clock}点方向({o.lr_zh})"
             scene_prefix = f"{scene_zh}，" if scene_zh else ""
-            sentence = f"{prefix}{scene_prefix}{direction}{dist_txt}有{_zh_name(o.name)}，{action}"
+            sentence = f"{prefix}{scene_prefix}{direction}约{dist_txt}有{_zh_name(o.name)}，{action}"
             has_stair = any(self._is_stair_like_name(str(obj.name)) for obj in objs)
             support_obj = next(
                 (obj for obj in objs if self._is_stair_support_name(str(obj.name))),
@@ -1650,10 +1650,10 @@ class SemanticOutputEngine:
             # 距离描述（支持米或步数）
             if use_steps:
                 steps = int(round(o.distance_m / 0.6))
-                dist_txt = f"约{steps}步"
+                dist_txt = f"{max(1, steps)}步"
             else:
-                d = o.distance_m
-                dist_txt = f"{d:.0f}米" if d >= 1.0 else f"{d:.1f}米"
+                meters_i = max(1, int(round(float(o.distance_m))))
+                dist_txt = f"{meters_i}米"
 
             # 方向描述（钟点 + 左中右）
             lr_dir = o.lr_zh or "前方"
