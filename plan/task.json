@@ -123,8 +123,8 @@
         "Gate transition frames keep turnstile-related scene cues."
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 9,

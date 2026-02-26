@@ -333,12 +333,17 @@ LABEL_ALIASES = {
     "planter": "potted plant",
     "pottedplant": "potted plant",
     "indoor plant": "potted plant",
+    "ticketgate": "ticket gate",
+    "faregate": "fare gate",
+    "turn stile": "turnstile",
 }
 
 STAIR_LIKE_CLASSES = {"stairs", "escalator"}
 STAIR_SUPPORT_CLASSES = {"handrail", "railing"}
 GLASS_STRUCTURE_CLASSES = {"glass_door", "glass_window"}
 GLASS_SURFACE_BASE_CLASSES = {"door", "window"}
+TURNSTILE_CLASSES = {"turnstile", "ticket gate", "fare gate"}
+TURNSTILE_SUPPORT_CLASSES = {"ticket machine", "barrier", "stanchion"}
 INDOOR_SCENES = {
     "indoor",
     "corridor",
@@ -449,6 +454,9 @@ class SemanticOutputEngine:
         self.stair_memory_sec = float(os.getenv("AIGLASS_STAIR_MEMORY_SEC", "1.8"))
         self.stair_support_min_conf = float(os.getenv("AIGLASS_STAIR_SUPPORT_MIN_CONF", "0.35"))
         self.stair_hint_min_risk = float(os.getenv("AIGLASS_STAIR_HINT_MIN_RISK", "0.46"))
+        self.turnstile_memory_sec = float(os.getenv("AIGLASS_TURNSTILE_MEMORY_SEC", "2.2"))
+        self.turnstile_support_min_conf = float(os.getenv("AIGLASS_TURNSTILE_SUPPORT_MIN_CONF", "0.35"))
+        self.turnstile_hint_min_risk = float(os.getenv("AIGLASS_TURNSTILE_HINT_MIN_RISK", "0.44"))
         self.glass_pair_max_dist_norm = float(os.getenv("AIGLASS_GLASS_PAIR_MAX_DIST_NORM", "0.24"))
         self.glass_switch_max_dist_norm = float(os.getenv("AIGLASS_GLASS_SWITCH_MAX_DIST_NORM", "0.32"))
 
@@ -457,6 +465,7 @@ class SemanticOutputEngine:
         self.jump_count: int = 0
         self._track_cache: Dict[str, List[Dict[str, float]]] = defaultdict(list)
         self._last_stair_hint: Optional[Dict[str, Any]] = None
+        self._last_turnstile_hint: Optional[Dict[str, Any]] = None
         self.scene_strategies = list(self._SCENE_STRATEGIES)
         self._load_scene_strategies()
 
@@ -831,6 +840,12 @@ class SemanticOutputEngine:
     def _is_stair_support_name(self, name: str) -> bool:
         return self._normalize_object_name(name) in STAIR_SUPPORT_CLASSES
 
+    def _is_turnstile_name(self, name: str) -> bool:
+        return self._normalize_object_name(name) in TURNSTILE_CLASSES
+
+    def _is_turnstile_support_name(self, name: str) -> bool:
+        return self._normalize_object_name(name) in TURNSTILE_SUPPORT_CLASSES
+
     def _normalize_scene_object_name(self, name: str, scene: str) -> str:
         name_lc = self._normalize_object_name(name)
         scene_lc = str(scene or "").strip().lower()
@@ -922,6 +937,100 @@ class SemanticOutputEngine:
         synthetic["urgency"] = urgency
         synthetic["avoidance_action"] = action
         synthetic["inferred_from"] = "stair_hint"
+        return [*stage2, synthetic]
+
+    def _update_turnstile_hint_cache(self, candidates: List[Dict[str, Any]], now_ts: float):
+        turnstile_candidates = [
+            c for c in (candidates or []) if self._is_turnstile_name(str(c.get("name", "")))
+        ]
+        if not turnstile_candidates:
+            return
+        best = max(
+            turnstile_candidates,
+            key=lambda x: (float(x.get("risk_score", 0.0) or 0.0), float(x.get("score", 0.0) or 0.0)),
+        )
+        self._last_turnstile_hint = {
+            "ts": now_ts,
+            "name": self._normalize_object_name(str(best.get("name", ""))),
+            "conf": float(best.get("conf", 0.5) or 0.5),
+            "score": float(best.get("score", 0.0) or 0.0),
+            "risk_score": float(best.get("risk_score", 0.0) or 0.0),
+            "distance_m": float(best.get("distance_m", 2.0) or 2.0),
+            "area_ratio": float(best.get("area_ratio", 0.01) or 0.01),
+            "center_x": float(best.get("center_x", 0.0) or 0.0),
+            "center_y": float(best.get("center_y", 0.0) or 0.0),
+        }
+
+    def _maybe_inject_turnstile_hint(
+        self,
+        stage2: List[Dict[str, Any]],
+        prepared: List[Dict[str, Any]],
+        frame_w: int,
+        frame_h: int,
+        now_ts: float,
+        scene: str,
+    ) -> List[Dict[str, Any]]:
+        if any(self._is_turnstile_name(str(o.get("name", ""))) for o in (stage2 or [])):
+            return stage2
+        hint = self._last_turnstile_hint or {}
+        if not hint:
+            return stage2
+        if now_ts - float(hint.get("ts", 0.0) or 0.0) > self.turnstile_memory_sec:
+            return stage2
+
+        support_objs = [
+            o
+            for o in (prepared or [])
+            if self._is_turnstile_support_name(str(o.get("name", "")))
+            and float(o.get("conf", 0.0) or 0.0) >= self.turnstile_support_min_conf
+        ]
+        if not support_objs:
+            return stage2
+
+        scene_lc = str(scene or "").strip().lower()
+        if scene_lc not in {"subway", "unknown"} and len(support_objs) < 2:
+            return stage2
+
+        dist_m = float(hint.get("distance_m", 2.2) or 2.2)
+        synthetic = {
+            "name": "turnstile",
+            "conf": max(0.34, min(0.92, float(hint.get("conf", 0.5) or 0.5) * 0.70)),
+            "bbox": None,
+            "center_x": float(hint.get("center_x", frame_w / 2.0) or frame_w / 2.0),
+            "center_y": float(hint.get("center_y", frame_h * 0.58) or frame_h * 0.58),
+            "area_ratio": max(0.006, float(hint.get("area_ratio", 0.01) or 0.01) * 0.82),
+            "distance_m": max(0.8, min(8.0, dist_m + 0.2)),
+            "speed_norm": 0.0,
+            "approach_rate": 0.0,
+            "motion_dir": "hint_memory",
+            "score": max(0.33, float(hint.get("score", 0.4) or 0.4) * 0.74),
+            "inferred_from": "turnstile_hint",
+        }
+        factors = self._compute_risk_factors(
+            name="turnstile",
+            distance_m=float(synthetic.get("distance_m", 2.0)),
+            speed_norm=0.0,
+            approach_rate=0.0,
+            bbox=None,
+            frame_h=frame_h,
+            occlusion_factor=0.0,
+        )
+        risk_score = max(self.turnstile_hint_min_risk, self._risk_from_factors(factors))
+        action, urgency = self._avoidance(
+            name="turnstile",
+            cx=float(synthetic.get("center_x", frame_w / 2.0)),
+            w=frame_w,
+            distance_m=float(synthetic.get("distance_m", 2.0)),
+            risk_score=risk_score,
+            motion_dir="hint_memory",
+            support_factor=float(factors.get("support", 0.0)),
+            speed_norm=0.0,
+            approach_rate=0.0,
+        )
+        synthetic["risk_factors"] = factors
+        synthetic["risk_score"] = risk_score
+        synthetic["urgency"] = urgency
+        synthetic["avoidance_action"] = action
         return [*stage2, synthetic]
 
     def _enhance_stair_handrail_context(
@@ -1205,6 +1314,10 @@ class SemanticOutputEngine:
             if distance_m <= 1.6 or risk_score >= 0.55:
                 return "前方有盆栽占道，建议从侧边绕过，避免碰倒。", "MEDIUM"
             return "附近有盆栽，注意脚下并从侧边通过。", "LOW"
+        if name_lc == "turnstile":
+            if distance_m <= 1.6 or risk_score >= 0.56:
+                return "前方是闸机通道，减速对准通道中央通过。", "MEDIUM"
+            return "前方有闸机区域，沿通道方向继续前行。", "LOW"
         if name_lc in STAIR_SUPPORT_CLASSES and stair_context:
             side_zh = "左侧" if side == "left" else ("右侧" if side == "right" else "前方")
             if distance_m <= 1.8 or risk_score >= 0.52:
@@ -1406,7 +1519,9 @@ class SemanticOutputEngine:
             reverse=True,
         )[: max(1, self.stage2_topk)]
         self._update_stair_hint_cache(stage2, now_ts)
+        self._update_turnstile_hint_cache(stage2, now_ts)
         stage2 = self._maybe_inject_stair_hint(stage2, prepared, frame_w, frame_h, now_ts)
+        stage2 = self._maybe_inject_turnstile_hint(stage2, prepared, frame_w, frame_h, now_ts, scene)
         stage2 = self._enhance_stair_handrail_context(stage2, candidates, frame_w)
         stage2 = sorted(
             stage2,

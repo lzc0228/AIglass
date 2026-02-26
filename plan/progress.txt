@@ -198,3 +198,26 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_indoor_potted_plant.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile text_reader.py` passed.
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
+
+## 2026-02-27 01:00 +0800 - Task #8 completed
+- Selected next pending task by AGENT order: `#8 Improve turnstile recognition after passing gate`.
+- Root-cause evidence:
+  - Turnstile cue dropped after gate transition frames; when frame no longer had explicit `turnstile`, scene text lost闸机语义。
+  - Turnstile action text was generic avoidance phrase, not channel-passage guidance.
+- Implemented task scope (`semantic_output.py`):
+  - Added turnstile class/support sets and normalization aliases.
+  - Added short turnstile hint memory (`_last_turnstile_hint`) with gated reinjection logic:
+    - if recent turnstile cue exists and current frame has turnstile-support evidence (`ticket machine/barrier/stanchion`), reinject turnstile cue.
+    - if no support cue, do not reinject (avoid hallucination).
+  - Added dedicated turnstile guidance action (channel alignment + cautious passage).
+- Added tests:
+  - `tests/test_semantic_turnstile_persistence.py`
+    - gate transition frame keeps turnstile-related cue.
+    - no support cue => no turnstile reinjection.
+    - turnstile action text uses闸机通道 guidance (not default generic avoid phrase).
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_turnstile_persistence.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_indoor_potted_plant.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_restroom_mode.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile text_reader.py` passed.
