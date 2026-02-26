@@ -386,3 +386,28 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_roadside_obstacles.py' -v` passed.
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_roadside_obstacles.py` passed.
+
+## 2026-02-27 01:32 +0800 - Task #15 completed
+- Selected next pending task by AGENT order: `#15 Improve low-fence detection`.
+- Root-cause evidence:
+  - `low fence/short fence/guard rail` aliases were not normalized to canonical `fence`.
+  - In mixed roadside scenes, low-height fence cues were often squeezed out by higher-score furniture/vehicle classes.
+- Implemented task scope (`semantic_output.py`):
+  - Added low-fence alias normalization:
+    - `low fence/short fence/guard rail/... -> fence`.
+  - Added low-fence geometry policy:
+    - `center_y` lower-half and height-ratio gating to identify low-height fence candidates.
+  - Added low-fence scoring/risk reinforcement:
+    - scene-aware low-fence bonus in `_compute_score(...)`.
+    - low-fence risk floor in candidate risk calculation to reduce misses in near-path cases.
+  - Added output safeguard `_force_low_fence_topk(...)`:
+    - when low fence evidence exists, preserve at least one low-fence cue in final Top-K.
+- Added tests:
+  - `tests/test_semantic_low_fence_detection.py`
+    - low-fence alias normalization to `fence`.
+    - low-fence class priority over generic furniture in sidewalk scoring.
+    - low-fence cue retained in mixed output and text.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_low_fence_detection.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_low_fence_detection.py` passed.

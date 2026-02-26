@@ -229,8 +229,8 @@
         "Low-fence sample frames trigger fence obstacle output."
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 16,

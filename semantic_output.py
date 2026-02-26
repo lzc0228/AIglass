@@ -395,6 +395,15 @@ LABEL_ALIASES = {
     "electric bicycle": "scooter",
     "bike": "bicycle",
     "motor bike": "motorcycle",
+    "low fence": "fence",
+    "short fence": "fence",
+    "small fence": "fence",
+    "low barrier": "fence",
+    "guard rail": "fence",
+    "guardrail": "fence",
+    "safety rail": "fence",
+    "fence barrier": "fence",
+    "rail barrier": "fence",
     "telephone pole": "utility pole",
     "lamp post": "light pole",
     "lightpost": "light pole",
@@ -549,6 +558,9 @@ class SemanticOutputEngine:
         self.parked_block_area_min = float(os.getenv("AIGLASS_PARKED_BLOCK_AREA_MIN", "0.035"))
         self.parked_speed_max = float(os.getenv("AIGLASS_PARKED_SPEED_MAX", "0.10"))
         self.parked_approach_abs_max = float(os.getenv("AIGLASS_PARKED_APPROACH_ABS_MAX", "0.015"))
+        self.low_fence_center_y_min = float(os.getenv("AIGLASS_LOW_FENCE_CENTER_Y_MIN", "0.56"))
+        self.low_fence_height_max_ratio = float(os.getenv("AIGLASS_LOW_FENCE_HEIGHT_MAX_RATIO", "0.42"))
+        self.low_fence_risk_floor = float(os.getenv("AIGLASS_LOW_FENCE_RISK_FLOOR", "0.50"))
 
         # 稳定性指标（WP4 会进一步结合 IMU）
         self.prev_signature: Optional[str] = None
@@ -782,6 +794,7 @@ class SemanticOutputEngine:
         indoor_plant_boost = 1.0
         vertical_bonus = 1.0
         roadside_bonus = 1.0
+        low_fence_bonus = 1.0
         if k == "potted plant" and scene_lc in INDOOR_SCENES:
             indoor_plant_boost = 2.2 + min(1.8, max(0.0, float(area_ratio)) * 18.0)
         if k in VERTICAL_STATIC_CLASSES:
@@ -796,7 +809,45 @@ class SemanticOutputEngine:
             roadside_bonus = 1.18 + min(0.50, max(0.0, float(area_ratio)) * 10.0)
             if scene_lc in ROADSIDE_PRIORITY_SCENES:
                 roadside_bonus *= 1.25
-        return base * tw * sw * up * prox * dyn * structure_bonus * indoor_plant_boost * vertical_bonus * roadside_bonus
+        if k == "fence":
+            low_profile_bonus = max(0.0, min(0.55, (0.18 - max(0.0, float(area_ratio))) * 2.0))
+            low_fence_bonus = 1.10 + low_profile_bonus
+            if scene_lc in ROADSIDE_PRIORITY_SCENES:
+                low_fence_bonus *= 1.18
+        return (
+            base
+            * tw
+            * sw
+            * up
+            * prox
+            * dyn
+            * structure_bonus
+            * indoor_plant_boost
+            * vertical_bonus
+            * roadside_bonus
+            * low_fence_bonus
+        )
+
+    def _is_low_fence_geometry(self, bbox: Optional[List[float]], frame_h: int) -> bool:
+        if not bbox or len(bbox) != 4 or frame_h <= 0:
+            return False
+        _, y1, _, y2 = [float(v) for v in bbox]
+        center_y = ((y1 + y2) * 0.5) / float(frame_h)
+        height_ratio = max(0.0, y2 - y1) / float(frame_h)
+        if center_y < self.low_fence_center_y_min:
+            return False
+        if height_ratio > self.low_fence_height_max_ratio:
+            return False
+        return True
+
+    def _is_low_fence_candidate(self, item: Dict[str, Any], frame_h: int) -> bool:
+        name_lc = self._normalize_object_name(str(item.get("name", "")))
+        if name_lc != "fence":
+            return False
+        bbox = item.get("bbox")
+        if not isinstance(bbox, list):
+            return False
+        return self._is_low_fence_geometry(bbox, frame_h)
 
     def _best_previous_track(self, name: str, cx: float, cy: float, now_ts: float) -> Optional[Dict[str, float]]:
         name_lc = self._normalize_object_name(name)
@@ -1398,6 +1449,50 @@ class SemanticOutputEngine:
         out.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
         return out
 
+    def _force_low_fence_topk(
+        self,
+        topk: List[SemanticObject],
+        sem_objs: List[SemanticObject],
+    ) -> List[SemanticObject]:
+        out = list(topk or [])
+        if not out or not sem_objs:
+            return out
+
+        low_fence_pool = [
+            o
+            for o in sem_objs
+            if self._normalize_object_name(getattr(o, "name", "")) == "fence"
+            and self._is_low_fence_geometry(getattr(o, "bbox", None), int(getattr(o, "frame_h", 0) or 0))
+        ]
+        if not low_fence_pool:
+            return out
+
+        if any(
+            self._normalize_object_name(getattr(o, "name", "")) == "fence"
+            and self._is_low_fence_geometry(getattr(o, "bbox", None), int(getattr(o, "frame_h", 0) or 0))
+            for o in out
+        ):
+            return out
+
+        best_fence = sorted(low_fence_pool, key=lambda x: (x.risk_score, x.score), reverse=True)[0]
+
+        replace_idx = None
+        for idx in range(len(out) - 1, -1, -1):
+            victim = out[idx]
+            n = victim.name
+            if self._is_stair_like_name(n) or self._is_stair_support_name(n) or self._is_turnstile_name(n):
+                continue
+            if str(getattr(victim, "urgency", "LOW")).upper() == "HIGH":
+                continue
+            replace_idx = idx
+            break
+        if replace_idx is None:
+            return out
+
+        out[replace_idx] = best_fence
+        out.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
+        return out
+
     def _pair_distance_norm(
         self,
         a: Dict[str, Any],
@@ -1791,6 +1886,9 @@ class SemanticOutputEngine:
             ):
                 area_ratio = float(item.get("area_ratio", 0.0) or 0.0)
                 risk_score = max(risk_score, 0.48 + min(0.22, max(0.0, area_ratio) * 2.4))
+            if self._is_low_fence_candidate(item, frame_h):
+                area_ratio = float(item.get("area_ratio", 0.0) or 0.0)
+                risk_score = max(risk_score, self.low_fence_risk_floor + min(0.16, max(0.0, area_ratio) * 0.6))
             item["risk_factors"] = factors
             item["risk_score"] = risk_score
 
@@ -1894,6 +1992,7 @@ class SemanticOutputEngine:
         topk = self._force_stair_handrail_topk(topk, sem_objs)
         topk = self._force_vertical_static_topk(topk, sem_objs)
         topk = self._force_roadside_obstacle_topk(topk, sem_objs)
+        topk = self._force_low_fence_topk(topk, sem_objs)
         is_dynamic = any((o.name or "").strip().lower() in DYNAMIC_CLASSES and o.distance_m <= 3.0 for o in topk)
         if imu_yaw_rate_dps is not None and abs(float(imu_yaw_rate_dps)) >= self.turn_rate_thr_dps:
             is_dynamic = True
