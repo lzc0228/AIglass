@@ -227,6 +227,10 @@ NAME_ZH = {
     "escalator": "扶梯",
     "door": "门",
     "window": "窗户",
+    "glass_door": "玻璃门",
+    "glass_window": "玻璃窗",
+    "door_handle": "门把手",
+    "light_switch": "灯光开关",
     "doctor": "医生",
     "nurse": "护士",
     "hospital bed": "病床",
@@ -309,10 +313,26 @@ LABEL_ALIASES = {
     "steps": "stairs",
     "hand rail": "handrail",
     "rail": "railing",
+    "glass door": "glass_door",
+    "glassdoor": "glass_door",
+    "glass-door": "glass_door",
+    "glass window": "glass_window",
+    "glasswindow": "glass_window",
+    "glass-window": "glass_window",
+    "window pane": "glass_window",
+    "door handle": "door_handle",
+    "doorknob": "door_handle",
+    "door knob": "door_handle",
+    "handle": "door_handle",
+    "switch": "light_switch",
+    "light switch": "light_switch",
+    "wall switch": "light_switch",
 }
 
 STAIR_LIKE_CLASSES = {"stairs", "escalator"}
 STAIR_SUPPORT_CLASSES = {"handrail", "railing"}
+GLASS_STRUCTURE_CLASSES = {"glass_door", "glass_window"}
+GLASS_SURFACE_BASE_CLASSES = {"door", "window"}
 
 
 @dataclass
@@ -408,6 +428,8 @@ class SemanticOutputEngine:
         self.stair_memory_sec = float(os.getenv("AIGLASS_STAIR_MEMORY_SEC", "1.8"))
         self.stair_support_min_conf = float(os.getenv("AIGLASS_STAIR_SUPPORT_MIN_CONF", "0.35"))
         self.stair_hint_min_risk = float(os.getenv("AIGLASS_STAIR_HINT_MIN_RISK", "0.46"))
+        self.glass_pair_max_dist_norm = float(os.getenv("AIGLASS_GLASS_PAIR_MAX_DIST_NORM", "0.24"))
+        self.glass_switch_max_dist_norm = float(os.getenv("AIGLASS_GLASS_SWITCH_MAX_DIST_NORM", "0.32"))
 
         # 稳定性指标（WP4 会进一步结合 IMU）
         self.prev_signature: Optional[str] = None
@@ -628,17 +650,22 @@ class SemanticOutputEngine:
         return out
 
     def _compute_score(self, name: str, conf: float, area_ratio: float, scene: str) -> float:
-        k = (name or "").strip().lower()
+        k = self._normalize_object_name(name)
         base = max(0.05, min(1.0, float(conf)))
         tw = float(self.task_weights.get(k, 1.0))
         sw = float((self.scene_weights.get(scene) or {}).get(k, 1.0))
         up = float(self.user_prefs.get(k, 1.0))
         prox = 1.0 + min(2.0, float(area_ratio) * 8.0)
         dyn = 1.5 if k in DYNAMIC_CLASSES else 1.0
-        return base * tw * sw * up * prox * dyn
+        structure_bonus = 1.0
+        if k in GLASS_STRUCTURE_CLASSES:
+            structure_bonus = 1.25
+        elif k in {"door_handle", "light_switch"}:
+            structure_bonus = 1.08
+        return base * tw * sw * up * prox * dyn * structure_bonus
 
     def _best_previous_track(self, name: str, cx: float, cy: float, now_ts: float) -> Optional[Dict[str, float]]:
-        name_lc = (name or "").strip().lower()
+        name_lc = self._normalize_object_name(name)
         history = self._track_cache.get(name_lc) or []
         best = None
         best_dist = float("inf")
@@ -767,9 +794,10 @@ class SemanticOutputEngine:
         return urgency
 
     def _normalize_object_name(self, name: str) -> str:
-        k = (name or "").strip().lower()
+        k = str(name or "").strip().lower().replace("-", " ").replace("_", " ")
         if not k:
             return ""
+        k = " ".join(k.split())
         return LABEL_ALIASES.get(k, k)
 
     def _is_stair_like_name(self, name: str) -> bool:
@@ -864,6 +892,108 @@ class SemanticOutputEngine:
         synthetic["inferred_from"] = "stair_hint"
         return [*stage2, synthetic]
 
+    def _pair_distance_norm(
+        self,
+        a: Dict[str, Any],
+        b: Dict[str, Any],
+        frame_w: int,
+        frame_h: int,
+    ) -> float:
+        ax = float(a.get("center_x", frame_w / 2.0) or frame_w / 2.0)
+        ay = float(a.get("center_y", frame_h / 2.0) or frame_h / 2.0)
+        bx = float(b.get("center_x", frame_w / 2.0) or frame_w / 2.0)
+        by = float(b.get("center_y", frame_h / 2.0) or frame_h / 2.0)
+        diag = max(1.0, math.hypot(float(frame_w), float(frame_h)))
+        return math.hypot(ax - bx, ay - by) / diag
+
+    def _infer_glass_structure_candidates(
+        self,
+        prepared: List[Dict[str, Any]],
+        frame_w: int,
+        frame_h: int,
+    ) -> List[Dict[str, Any]]:
+        prepared = list(prepared or [])
+        if not prepared:
+            return []
+
+        explicit_glass = any(
+            self._normalize_object_name(str(o.get("name", ""))) in GLASS_STRUCTURE_CLASSES
+            for o in prepared
+        )
+        if explicit_glass:
+            return []
+
+        surfaces: List[Dict[str, Any]] = []
+        handles: List[Dict[str, Any]] = []
+        switches: List[Dict[str, Any]] = []
+        for o in prepared:
+            name = self._normalize_object_name(str(o.get("name", "")))
+            if name in GLASS_SURFACE_BASE_CLASSES:
+                surfaces.append(o)
+            elif name == "door_handle":
+                handles.append(o)
+            elif name == "light_switch":
+                switches.append(o)
+
+        if not surfaces or not handles:
+            return []
+
+        inferred: List[Dict[str, Any]] = []
+        for s in surfaces:
+            surface_name = self._normalize_object_name(str(s.get("name", "")))
+            if surface_name not in GLASS_SURFACE_BASE_CLASSES:
+                continue
+
+            best_handle = None
+            best_dist = float("inf")
+            for h in handles:
+                d = self._pair_distance_norm(s, h, frame_w, frame_h)
+                if d < best_dist:
+                    best_dist = d
+                    best_handle = h
+            if best_handle is None or best_dist > self.glass_pair_max_dist_norm:
+                continue
+
+            has_near_switch = False
+            for sw in switches:
+                if self._pair_distance_norm(best_handle, sw, frame_w, frame_h) <= self.glass_switch_max_dist_norm:
+                    has_near_switch = True
+                    break
+
+            target_name = "glass_door" if surface_name == "door" else "glass_window"
+            sx = float(s.get("center_x", frame_w / 2.0) or frame_w / 2.0)
+            sy = float(s.get("center_y", frame_h / 2.0) or frame_h / 2.0)
+            hx = float(best_handle.get("center_x", sx) or sx)
+            hy = float(best_handle.get("center_y", sy) or sy)
+            s_conf = float(s.get("conf", 0.5) or 0.5)
+            h_conf = float(best_handle.get("conf", 0.5) or 0.5)
+            conf = max(0.35, min(0.95, max(s_conf, h_conf) * 0.74 + (0.08 if has_near_switch else 0.0)))
+            inferred.append(
+                {
+                    "name": target_name,
+                    "raw_name": f"inferred_{target_name}",
+                    "conf": conf,
+                    "bbox": (list(s.get("bbox")) if isinstance(s.get("bbox"), (list, tuple)) else None),
+                    "center_x": sx * 0.72 + hx * 0.28,
+                    "center_y": sy * 0.72 + hy * 0.28,
+                    "area_ratio": max(
+                        float(s.get("area_ratio", 0.0) or 0.0),
+                        float(best_handle.get("area_ratio", 0.0) or 0.0) * 2.4,
+                    ),
+                    "inferred_from": "glass_surface_handle_context",
+                    "glass_switch_nearby": has_near_switch,
+                }
+            )
+
+        # 对同类提示去重，保留置信度更高的一个
+        dedup: Dict[str, Dict[str, Any]] = {}
+        for it in inferred:
+            k = str(it.get("name", ""))
+            prev = dedup.get(k)
+            if prev is None or float(it.get("conf", 0.0) or 0.0) > float(prev.get("conf", 0.0) or 0.0):
+                dedup[k] = it
+        return list(dedup.values())
+
     def _is_static_poster_like_person(
         self,
         *,
@@ -910,6 +1040,20 @@ class SemanticOutputEngine:
             side = "right"
 
         urgency = self._infer_urgency(name_lc, distance_m, risk_score, motion_dir)
+        if name_lc == "glass_door":
+            if distance_m <= 1.5:
+                return "前方疑似玻璃门，门把手方向已标出，减速确认后通过。", "MEDIUM"
+            if distance_m <= 2.8:
+                return "前方可能是玻璃门，注意门把手位置并靠近确认。", "LOW"
+            return "前方有玻璃门结构，沿提示方向谨慎接近。", "LOW"
+        if name_lc == "glass_window":
+            if distance_m <= 1.8:
+                return "前方有玻璃窗，注意反光并与边缘保持距离。", "MEDIUM"
+            return "前方有玻璃窗结构，按方向提示谨慎通行。", "LOW"
+        if name_lc == "door_handle":
+            return "门把手在该方向，可据此确认入口。", "LOW"
+        if name_lc == "light_switch":
+            return "附近有灯光开关，可作为门口位置参考。", "LOW"
         if name_lc in STAIR_LIKE_CLASSES:
             if distance_m <= 1.2 or risk_score >= 0.72:
                 return "前方台阶较近，先停一下，确认后再走。", "HIGH"
@@ -964,7 +1108,7 @@ class SemanticOutputEngine:
 
     def _update_track_cache(self, items: List[Dict[str, Any]], now_ts: float):
         for o in items:
-            name = str(o.get("name", "")).strip().lower()
+            name = self._normalize_object_name(str(o.get("name", "")))
             if not name:
                 continue
             self._track_cache[name].append(
@@ -1003,6 +1147,10 @@ class SemanticOutputEngine:
             if conf_f < self.conf_threshold:
                 continue
             prepared.append({**o, "name": name, "raw_name": raw_name, "conf": conf_f})
+
+        glass_inferred = self._infer_glass_structure_candidates(prepared, frame_w, frame_h)
+        if glass_inferred:
+            prepared.extend(glass_inferred)
 
         names = [str(o.get("name", "")).strip().lower() for o in prepared]
         scene, scene_confidence = self.infer_scene_with_confidence(names, mean_luma=mean_luma)

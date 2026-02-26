@@ -62,8 +62,8 @@
         "Sample frames produce glass/handle/switch guidance text."
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 5,

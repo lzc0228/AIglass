@@ -91,3 +91,35 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
   - Stair replay probe (2-frame synthetic) result:
     - frame1 includes stairs+handrail, frame2 only handrail; frame2 output still contains stair cue (`frame2_objs=['handrail','stairs']`).
+
+## 2026-02-27 00:39 +0800 - Task #4 completed
+- Selected next pending task by AGENT order: `#4 Add glass door/window handle and switch localization`.
+- Environment/startup check (venv `openai_glasses`) and direct run completed:
+  - `python app_main.py` starts and writes log `log/app_main-20260227_003459.log`.
+  - Existing blockers unchanged: missing `dashscope`, and CUDA incompatibility (`sm_120` vs current torch build) causing GPU model warmup failures.
+- Root-cause evidence:
+  - Existing semantic pipeline did not synthesize glass structure cues from `door/window + handle/switch`.
+  - Glass-like samples only produced plain `door/window/handle/switch` labels and default avoid phrases.
+- Implemented task scope (`semantic_output.py`):
+  - Added glass-related label normalization:
+    - `glass door/window`, `door handle/handle/doorknob`, `light switch/switch` -> canonical labels.
+  - Added glass context inference:
+    - if `door/window` and nearby `door_handle` co-occur, synthesize `glass_door/glass_window` cue;
+    - nearby `light_switch` adds confidence bonus.
+  - Added dedicated glass guidance actions (non-generic avoid) for:
+    - `glass_door`, `glass_window`, `door_handle`, `light_switch`.
+  - Kept prior stair/poster logic and regression behavior intact.
+- Added tests:
+  - `tests/test_semantic_glass_guidance.py`
+    - door+handle+switch -> glass_door cue with directional text
+    - window+handle -> glass_window cue with directional text
+    - glass_door action uses glass/handle guidance, not generic avoid wording
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_glass_guidance.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stair_stability.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_poster_person_filter.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_audio_routing_policy.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
+  - Sample-frame probe output includes glass/handle/switch directional guidance:
+    - `names=['door','glass_door','light_switch']`
+    - text contains `12点方向...有玻璃门...门把手...`
