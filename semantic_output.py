@@ -207,6 +207,7 @@ NAME_ZH = {
     "bench": "长椅",
     "chair": "椅子",
     "potted plant": "盆栽",
+    "plant": "植物",
     "hydrant": "消防栓",
     "cone": "锥桶",
     "stone": "石头",
@@ -327,12 +328,32 @@ LABEL_ALIASES = {
     "switch": "light_switch",
     "light switch": "light_switch",
     "wall switch": "light_switch",
+    "flowerpot": "potted plant",
+    "flower pot": "potted plant",
+    "planter": "potted plant",
+    "pottedplant": "potted plant",
+    "indoor plant": "potted plant",
 }
 
 STAIR_LIKE_CLASSES = {"stairs", "escalator"}
 STAIR_SUPPORT_CLASSES = {"handrail", "railing"}
 GLASS_STRUCTURE_CLASSES = {"glass_door", "glass_window"}
 GLASS_SURFACE_BASE_CLASSES = {"door", "window"}
+INDOOR_SCENES = {
+    "indoor",
+    "corridor",
+    "restroom",
+    "restaurant",
+    "office",
+    "hospital",
+    "mall",
+    "supermarket",
+    "school",
+    "stairs",
+    "elevator",
+    "subway",
+    "bank",
+}
 
 
 @dataclass
@@ -651,6 +672,7 @@ class SemanticOutputEngine:
 
     def _compute_score(self, name: str, conf: float, area_ratio: float, scene: str) -> float:
         k = self._normalize_object_name(name)
+        scene_lc = str(scene or "").strip().lower()
         base = max(0.05, min(1.0, float(conf)))
         tw = float(self.task_weights.get(k, 1.0))
         sw = float((self.scene_weights.get(scene) or {}).get(k, 1.0))
@@ -658,11 +680,14 @@ class SemanticOutputEngine:
         prox = 1.0 + min(2.0, float(area_ratio) * 8.0)
         dyn = 1.5 if k in DYNAMIC_CLASSES else 1.0
         structure_bonus = 1.0
+        indoor_plant_boost = 1.0
+        if k == "potted plant" and scene_lc in INDOOR_SCENES:
+            indoor_plant_boost = 2.2 + min(1.8, max(0.0, float(area_ratio)) * 18.0)
         if k in GLASS_STRUCTURE_CLASSES:
             structure_bonus = 1.25
         elif k in {"door_handle", "light_switch"}:
             structure_bonus = 1.08
-        return base * tw * sw * up * prox * dyn * structure_bonus
+        return base * tw * sw * up * prox * dyn * structure_bonus * indoor_plant_boost
 
     def _best_previous_track(self, name: str, cx: float, cy: float, now_ts: float) -> Optional[Dict[str, float]]:
         name_lc = self._normalize_object_name(name)
@@ -805,6 +830,13 @@ class SemanticOutputEngine:
 
     def _is_stair_support_name(self, name: str) -> bool:
         return self._normalize_object_name(name) in STAIR_SUPPORT_CLASSES
+
+    def _normalize_scene_object_name(self, name: str, scene: str) -> str:
+        name_lc = self._normalize_object_name(name)
+        scene_lc = str(scene or "").strip().lower()
+        if name_lc == "plant" and scene_lc in INDOOR_SCENES:
+            return "potted plant"
+        return name_lc
 
     def _update_stair_hint_cache(self, candidates: List[Dict[str, Any]], now_ts: float):
         stair_candidates = [c for c in (candidates or []) if self._is_stair_like_name(str(c.get("name", "")))]
@@ -1169,6 +1201,10 @@ class SemanticOutputEngine:
             return "门把手在该方向，可据此确认入口。", "LOW"
         if name_lc == "light_switch":
             return "附近有灯光开关，可作为门口位置参考。", "LOW"
+        if name_lc == "potted plant":
+            if distance_m <= 1.6 or risk_score >= 0.55:
+                return "前方有盆栽占道，建议从侧边绕过，避免碰倒。", "MEDIUM"
+            return "附近有盆栽，注意脚下并从侧边通过。", "LOW"
         if name_lc in STAIR_SUPPORT_CLASSES and stair_context:
             side_zh = "左侧" if side == "left" else ("右侧" if side == "right" else "前方")
             if distance_m <= 1.8 or risk_score >= 0.52:
@@ -1279,6 +1315,12 @@ class SemanticOutputEngine:
         names = [str(o.get("name", "")).strip().lower() for o in prepared]
         scene, scene_confidence = self.infer_scene_with_confidence(names, mean_luma=mean_luma)
 
+        normalized_prepared: List[Dict[str, Any]] = []
+        for o in prepared:
+            mapped_name = self._normalize_scene_object_name(str(o.get("name", "")), scene)
+            normalized_prepared.append({**o, "name": mapped_name})
+        prepared = normalized_prepared
+
         scored = []
         for o in prepared:
             name = str(o.get("name", "")).strip()
@@ -1336,6 +1378,12 @@ class SemanticOutputEngine:
                 occlusion_factor=float(item.get("occlusion_factor", 0.0) or 0.0),
             )
             risk_score = self._risk_from_factors(factors)
+            if (
+                self._normalize_object_name(str(item.get("name", ""))) == "potted plant"
+                and str(scene or "").strip().lower() in INDOOR_SCENES
+            ):
+                area_ratio = float(item.get("area_ratio", 0.0) or 0.0)
+                risk_score = max(risk_score, 0.48 + min(0.22, max(0.0, area_ratio) * 2.4))
             action, urgency = self._avoidance(
                 name=str(item.get("name", "")),
                 cx=float(item.get("center_x", frame_w / 2.0)),

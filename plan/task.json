@@ -92,8 +92,8 @@
         "Indoor plant test frames show potted-plant detection."
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 7,

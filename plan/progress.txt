@@ -152,3 +152,25 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_glass_guidance.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_poster_person_filter.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
+
+## 2026-02-27 00:54 +0800 - Task #6 completed
+- Selected next pending task by AGENT order: `#6 Improve indoor potted-plant obstacle detection`.
+- Root-cause evidence:
+  - Indoor `plant` label was not normalized to `potted plant`, causing mixed semantics/text.
+  - Potted-plant risk/score in indoor scenes was too low, and could be squeezed out by furniture objects.
+  - Potted-plant action text used generic avoid phrase rather than plant-specific caution guidance.
+- Implemented task scope (`semantic_output.py`):
+  - Added indoor plant normalization and aliases (`plant` in indoor scene -> `potted plant`; `flowerpot/planter/...` aliases).
+  - Added indoor potted-plant scoring boost and indoor risk floor to keep relevant potted-plant cues in Top-K.
+  - Added potted-plant specific guidance phrases (non-generic), with closer distance upgraded urgency.
+- Added tests:
+  - `tests/test_semantic_indoor_potted_plant.py`
+    - indoor `plant` is normalized to `potted plant` and text includes `盆栽`.
+    - near `potted plant` uses specific盆栽引导语（非默认通用措辞）。
+    - with competing indoor furniture, `potted plant` is still kept in semantic output.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_indoor_potted_plant.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stair_handrail_guidance.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stair_stability.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_glass_guidance.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
