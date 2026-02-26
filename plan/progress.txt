@@ -321,3 +321,40 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stair_handrail_guidance.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stair_stability.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
+
+## 2026-02-27 01:23 +0800 - Task #13 completed
+- Selected next pending task by AGENT order: `#13 Fix wrong-side avoidance around parked vehicles`.
+- Environment/startup check + direct run:
+  - Direct `python app_main.py` (system Python 3.12) failed early with blocker:
+    - `ModuleNotFoundError: No module named 'cv2'`.
+  - In project env (`conda activate openai_glasses`), direct `python app_main.py` entered startup path; observed existing runtime blockers/warnings:
+    - missing SDK dependency warning: `dashscope` not installed.
+    - RTX 5090 CUDA compatibility mismatch in current torch build (`no kernel image is available for execution on the device`).
+    - startup can be delayed by full audio preload mode.
+- Minimal unblock steps recorded:
+  - Use project env for startup/tests: `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses`.
+  - If staying on system Python, install missing OpenCV: `pip install opencv-python`.
+  - Install missing SDK dependency: `pip install dashscope`.
+  - For current GPU mismatch, run CPU fallback (`AIGLASS_DEVICE=cpu`) or install torch/ultralytics build compatible with `sm_120`.
+  - Optional startup acceleration: `AIGLASS_AUDIO_PRELOAD_MODE=limited`.
+- Root-cause evidence:
+  - Avoidance policy previously only used obstacle-side default (`left -> right绕开`, `center -> 右侧避让`), without considering side blockage by nearby parked vehicles.
+  - Reproduced wrong-side outputs:
+    - chair(left) + parked car(right) => `chair: 从右侧绕开。`
+    - chair(center) + parked car(left/right) => `chair: 稍微向右侧避让。`
+- Implemented task scope (`semantic_output.py`):
+  - Added parked-vehicle side blocking policy:
+    - new blocking classes set for parked vehicles.
+    - inferred blocked sides (`left/right`) from static vehicle candidates (distance/area + low motion).
+  - Extended `_avoidance(...)` with `blocked_sides` awareness:
+    - when preferred绕行侧被停靠车辆占道，自动切换到可行侧。
+    - when both sides blocked, return stop/observe guidance instead of directional绕行。
+  - Integrated blocked-side inference into semantic candidate action generation.
+- Added tests:
+  - `tests/test_semantic_parked_vehicle_side_policy.py`
+    - parked vehicle on right blocks right-side bypass for left obstacle.
+    - both sides blocked by parked vehicles suppress directional bypass and prefer stop/observe guidance.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_parked_vehicle_side_policy.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_parked_vehicle_side_policy.py` passed.

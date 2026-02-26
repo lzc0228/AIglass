@@ -199,8 +199,8 @@
         "Crosswalk/navigation decision tests prefer feasible side."
       ],
       "dependencies": [11],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 14,

@@ -25,7 +25,7 @@ import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # 导入结构化语音模块（schema_version=2）
 try:
@@ -308,6 +308,17 @@ DYNAMIC_CLASSES = {
     "scooter",
 }
 
+PARKED_BLOCKING_VEHICLE_CLASSES = {
+    "car",
+    "bus",
+    "truck",
+    "taxi",
+    "police car",
+    "ambulance",
+    "motorcycle",
+    "scooter",
+}
+
 LABEL_ALIASES = {
     "stair": "stairs",
     "staircase": "stairs",
@@ -498,6 +509,10 @@ class SemanticOutputEngine:
         self.far_static_risk_max = float(os.getenv("AIGLASS_FAR_STATIC_RISK_MAX", "0.52"))
         self.glass_pair_max_dist_norm = float(os.getenv("AIGLASS_GLASS_PAIR_MAX_DIST_NORM", "0.24"))
         self.glass_switch_max_dist_norm = float(os.getenv("AIGLASS_GLASS_SWITCH_MAX_DIST_NORM", "0.32"))
+        self.parked_block_distance_m = float(os.getenv("AIGLASS_PARKED_BLOCK_DISTANCE_M", "3.8"))
+        self.parked_block_area_min = float(os.getenv("AIGLASS_PARKED_BLOCK_AREA_MIN", "0.035"))
+        self.parked_speed_max = float(os.getenv("AIGLASS_PARKED_SPEED_MAX", "0.10"))
+        self.parked_approach_abs_max = float(os.getenv("AIGLASS_PARKED_APPROACH_ABS_MAX", "0.015"))
 
         # 稳定性指标（WP4 会进一步结合 IMU）
         self.prev_signature: Optional[str] = None
@@ -896,6 +911,50 @@ class SemanticOutputEngine:
         if name_lc == "plant" and scene_lc in INDOOR_SCENES:
             return "potted plant"
         return name_lc
+
+    def _is_parked_blocking_vehicle(self, item: Dict[str, Any]) -> bool:
+        name_lc = self._normalize_object_name(str(item.get("name", "")))
+        if name_lc not in PARKED_BLOCKING_VEHICLE_CLASSES:
+            return False
+        if str(item.get("motion_dir", "")).startswith("approaching_"):
+            return False
+        if float(item.get("speed_norm", 0.0) or 0.0) > self.parked_speed_max:
+            return False
+        if abs(float(item.get("approach_rate", 0.0) or 0.0)) > self.parked_approach_abs_max:
+            return False
+        if float(item.get("distance_m", 99.0) or 99.0) <= self.parked_block_distance_m:
+            return True
+        if float(item.get("area_ratio", 0.0) or 0.0) >= self.parked_block_area_min:
+            return True
+        return False
+
+    def _infer_parked_vehicle_blocked_sides(
+        self,
+        candidates: List[Dict[str, Any]],
+        frame_w: int,
+    ) -> Set[str]:
+        blocked: Set[str] = set()
+        fw = max(1.0, float(frame_w))
+        for item in candidates or []:
+            if not self._is_parked_blocking_vehicle(item):
+                continue
+            bbox = item.get("bbox")
+            if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+                x1 = max(0.0, min(fw, float(bbox[0])))
+                x2 = max(0.0, min(fw, float(bbox[2])))
+            else:
+                cx = max(0.0, min(fw, float(item.get("center_x", fw / 2.0) or fw / 2.0)))
+                half_w = fw * 0.08
+                x1 = max(0.0, cx - half_w)
+                x2 = min(fw, cx + half_w)
+
+            if x2 <= fw * 0.54:
+                blocked.add("left")
+            elif x1 >= fw * 0.46:
+                blocked.add("right")
+            else:
+                blocked.update({"left", "right"})
+        return blocked
 
     def _update_stair_hint_cache(self, candidates: List[Dict[str, Any]], now_ts: float):
         stair_candidates = [c for c in (candidates or []) if self._is_stair_like_name(str(c.get("name", "")))]
@@ -1373,6 +1432,7 @@ class SemanticOutputEngine:
         speed_norm: float = 0.0,
         approach_rate: float = 0.0,
         stair_context: bool = False,
+        blocked_sides: Optional[Set[str]] = None,
     ) -> Tuple[str, str]:
         name_lc = self._normalize_object_name(name)
         x_ratio = cx / max(1.0, float(w))
@@ -1381,6 +1441,7 @@ class SemanticOutputEngine:
             side = "left"
         elif x_ratio > 0.6:
             side = "right"
+        blocked = {str(s).strip().lower() for s in (blocked_sides or set()) if str(s).strip().lower() in {"left", "right"}}
 
         urgency = self._infer_urgency(name_lc, distance_m, risk_score, motion_dir)
         if name_lc == "glass_door":
@@ -1446,14 +1507,43 @@ class SemanticOutputEngine:
             return "注意头部高度，稍微低头并从侧面绕行。", urgency
         if urgency == "HIGH":
             return "先停一下，注意避让。", urgency
+
+        def _directional_action(preferred_side: str) -> Optional[str]:
+            if preferred_side == "left":
+                if "left" not in blocked:
+                    return "从左侧绕开。"
+                if "right" not in blocked:
+                    return "从右侧绕开。"
+                return None
+            if preferred_side == "right":
+                if "right" not in blocked:
+                    return "从右侧绕开。"
+                if "left" not in blocked:
+                    return "从左侧绕开。"
+                return None
+            return None
+
+        preferred_side = ""
         if motion_dir == "approaching_left":
-            return "从右侧绕开。", urgency
-        if motion_dir == "approaching_right":
-            return "从左侧绕开。", urgency
-        if side == "left":
-            return "从右侧绕开。", urgency
-        if side == "right":
-            return "从左侧绕开。", urgency
+            preferred_side = "right"
+        elif motion_dir == "approaching_right":
+            preferred_side = "left"
+        elif side == "left":
+            preferred_side = "right"
+        elif side == "right":
+            preferred_side = "left"
+        if preferred_side:
+            directional = _directional_action(preferred_side)
+            if directional:
+                return directional, urgency
+
+        blocked_urgency = urgency if urgency in ("MEDIUM", "HIGH") else "MEDIUM"
+        if "left" in blocked and "right" in blocked:
+            return "前方两侧有停靠车辆占道，先停一下，确认可通行空隙后再通过。", blocked_urgency
+        if "right" in blocked:
+            return "右侧有停靠车辆占道，建议靠左减速通过。", blocked_urgency
+        if "left" in blocked:
+            return "左侧有停靠车辆占道，建议靠右减速通过。", blocked_urgency
         return "稍微向右侧避让。", urgency
 
     def _relations(self, objs: List[SemanticObject], w: int, h: int) -> List[SemanticObject]:
@@ -1596,19 +1686,23 @@ class SemanticOutputEngine:
             ):
                 area_ratio = float(item.get("area_ratio", 0.0) or 0.0)
                 risk_score = max(risk_score, 0.48 + min(0.22, max(0.0, area_ratio) * 2.4))
+            item["risk_factors"] = factors
+            item["risk_score"] = risk_score
+
+        blocked_sides = self._infer_parked_vehicle_blocked_sides(candidates, frame_w)
+        for item in candidates:
             action, urgency = self._avoidance(
                 name=str(item.get("name", "")),
                 cx=float(item.get("center_x", frame_w / 2.0)),
                 w=frame_w,
                 distance_m=float(item.get("distance_m", 0.0) or 0.0),
-                risk_score=risk_score,
+                risk_score=float(item.get("risk_score", 0.0) or 0.0),
                 motion_dir=str(item.get("motion_dir", "unknown")),
-                support_factor=float(factors.get("support", 0.0)),
+                support_factor=float((item.get("risk_factors") or {}).get("support", 0.0)),
                 speed_norm=float(item.get("speed_norm", 0.0) or 0.0),
                 approach_rate=float(item.get("approach_rate", 0.0) or 0.0),
+                blocked_sides=blocked_sides,
             )
-            item["risk_factors"] = factors
-            item["risk_score"] = risk_score
             item["urgency"] = urgency
             item["avoidance_action"] = action
 
