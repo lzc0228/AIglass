@@ -108,8 +108,8 @@
         "OCR-driven test emits restroom/entry/exit message."
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 8,

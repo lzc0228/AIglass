@@ -174,3 +174,27 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stair_stability.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_glass_guidance.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
+
+## 2026-02-27 00:56 +0800 - Task #7 completed
+- Selected next pending task by AGENT order: `#7 Recognize restroom signs/text and entry/exit direction`.
+- Root-cause evidence:
+  - `text_reader.py` only had `general/bus` post-processing; no restroom-specific semantic parse.
+  - OCR result text could be read, but `entry/exit` direction cue was not generated.
+- Implemented task scope (`text_reader.py`):
+  - Added `restroom` mode in `read_text()` dispatch.
+  - Added restroom parser `_process_restroom_results(...)`:
+    - recognizes restroom text keywords (中英 + WC)
+    - extracts male/female/accessible markers
+    - detects entry/exit intent (`入口/出口`, `entry/exit`)
+    - generates directional cue via arrow/方位词 + bbox position fallback.
+  - Added direction helper `_infer_direction_hint(...)`.
+- Added tests:
+  - `tests/test_text_reader_restroom_mode.py`
+    - restroom sign text can be recognized.
+    - restroom entry cue includes direction (e.g., right).
+    - restroom exit cue is generated with direction (e.g., left).
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_restroom_mode.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_indoor_potted_plant.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile text_reader.py` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
