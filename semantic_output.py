@@ -229,6 +229,8 @@ NAME_ZH = {
     "vertical post": "立柱",
     "traffic light": "红绿灯",
     "crosswalk": "斑马线",
+    "blindpath": "盲道",
+    "blind path": "盲道",
     "stairs": "楼梯",
     "stair": "楼梯",
     "handrail": "扶手",
@@ -342,6 +344,37 @@ ROADSIDE_PRIORITY_SCENES = {
     "construction",
 }
 
+CORE_NAV_CLASSES = {
+    "traffic light",
+    "crosswalk",
+    "blindpath",
+    "person",
+    "stairs",
+    "turnstile",
+}
+CORE_NAV_PRIORITY_SCENES = {
+    "street",
+    "sidewalk",
+    "crossroad",
+    "underpass",
+    "bridge",
+    "bus_stop",
+    "parking",
+    "subway",
+    "construction",
+}
+CORE_NAV_HINT_SCENES = {
+    "street",
+    "sidewalk",
+    "crossroad",
+    "underpass",
+    "bridge",
+    "bus_stop",
+    "parking",
+    "subway",
+    "unknown",
+}
+
 LABEL_ALIASES = {
     "stair": "stairs",
     "staircase": "stairs",
@@ -399,6 +432,14 @@ LABEL_ALIASES = {
     "electric bicycle": "scooter",
     "bike": "bicycle",
     "motor bike": "motorcycle",
+    "blind path": "blindpath",
+    "blind_path": "blindpath",
+    "blindpath": "blindpath",
+    "tactile paving": "blindpath",
+    "tactile path": "blindpath",
+    "guiding block": "blindpath",
+    "guidance path": "blindpath",
+    "tactile walkway": "blindpath",
     "low fence": "fence",
     "short fence": "fence",
     "small fence": "fence",
@@ -565,6 +606,10 @@ class SemanticOutputEngine:
         self.low_fence_center_y_min = float(os.getenv("AIGLASS_LOW_FENCE_CENTER_Y_MIN", "0.56"))
         self.low_fence_height_max_ratio = float(os.getenv("AIGLASS_LOW_FENCE_HEIGHT_MAX_RATIO", "0.42"))
         self.low_fence_risk_floor = float(os.getenv("AIGLASS_LOW_FENCE_RISK_FLOOR", "0.50"))
+        self.core_nav_priority_boost = float(os.getenv("AIGLASS_CORE_NAV_PRIORITY_BOOST", "1.18"))
+        self.core_nav_priority_scene_boost = float(os.getenv("AIGLASS_CORE_NAV_PRIORITY_SCENE_BOOST", "1.18"))
+        self.core_nav_memory_sec = float(os.getenv("AIGLASS_CORE_NAV_MEMORY_SEC", "1.8"))
+        self.core_person_memory_distance_m = float(os.getenv("AIGLASS_CORE_PERSON_MEMORY_DISTANCE_M", "3.6"))
         self.focus_gaze_hold_sec = float(os.getenv("AIGLASS_FOCUS_GAZE_HOLD_SEC", "2.0"))
         self.focus_yaw_rate_max_dps = float(os.getenv("AIGLASS_FOCUS_YAW_RATE_MAX_DPS", "6.0"))
         self.focus_yaw_hold_deg = float(os.getenv("AIGLASS_FOCUS_YAW_HOLD_DEG", "9.0"))
@@ -576,6 +621,7 @@ class SemanticOutputEngine:
         self._track_cache: Dict[str, List[Dict[str, float]]] = defaultdict(list)
         self._last_stair_hint: Optional[Dict[str, Any]] = None
         self._last_turnstile_hint: Optional[Dict[str, Any]] = None
+        self._last_core_nav_hints: Dict[str, Dict[str, Any]] = {}
         self._focus_anchor_ts: Optional[float] = None
         self._focus_anchor_yaw: Optional[float] = None
         self._focus_active: bool = False
@@ -806,6 +852,7 @@ class SemanticOutputEngine:
         vertical_bonus = 1.0
         roadside_bonus = 1.0
         low_fence_bonus = 1.0
+        core_nav_bonus = 1.0
         if k == "potted plant" and scene_lc in INDOOR_SCENES:
             indoor_plant_boost = 2.2 + min(1.8, max(0.0, float(area_ratio)) * 18.0)
         if k in VERTICAL_STATIC_CLASSES:
@@ -820,6 +867,10 @@ class SemanticOutputEngine:
             roadside_bonus = 1.18 + min(0.50, max(0.0, float(area_ratio)) * 10.0)
             if scene_lc in ROADSIDE_PRIORITY_SCENES:
                 roadside_bonus *= 1.25
+        if k in CORE_NAV_CLASSES:
+            core_nav_bonus = max(1.0, self.core_nav_priority_boost) + min(0.35, max(0.0, float(area_ratio)) * 6.0)
+            if scene_lc in CORE_NAV_PRIORITY_SCENES:
+                core_nav_bonus *= max(1.0, self.core_nav_priority_scene_boost)
         if k == "fence":
             low_profile_bonus = max(0.0, min(0.55, (0.18 - max(0.0, float(area_ratio))) * 2.0))
             low_fence_bonus = 1.10 + low_profile_bonus
@@ -837,6 +888,7 @@ class SemanticOutputEngine:
             * vertical_bonus
             * roadside_bonus
             * low_fence_bonus
+            * core_nav_bonus
         )
 
     def _is_low_fence_geometry(self, bbox: Optional[List[float]], frame_h: int) -> bool:
@@ -1014,6 +1066,124 @@ class SemanticOutputEngine:
         if name_lc == "plant" and scene_lc in INDOOR_SCENES:
             return "potted plant"
         return name_lc
+
+    def _is_core_nav_name(self, name: str) -> bool:
+        return self._normalize_object_name(name) in CORE_NAV_CLASSES
+
+    def _is_core_hint_support_name(self, name: str) -> bool:
+        name_lc = self._normalize_object_name(name)
+        if name_lc in CORE_NAV_CLASSES:
+            return True
+        if name_lc in {"car", "bus", "truck", "taxi", "road sign", "signpost", "sidewalk", "traffic light"}:
+            return True
+        return False
+
+    def _update_core_nav_hint_cache(self, candidates: List[Dict[str, Any]], now_ts: float):
+        for c in (candidates or []):
+            name_lc = self._normalize_object_name(str(c.get("name", "")))
+            if name_lc not in CORE_NAV_CLASSES:
+                continue
+            cur = self._last_core_nav_hints.get(name_lc)
+            score_key = (
+                float(c.get("risk_score", 0.0) or 0.0),
+                float(c.get("score", 0.0) or 0.0),
+            )
+            prev_key = (
+                float((cur or {}).get("risk_score", 0.0) or 0.0),
+                float((cur or {}).get("score", 0.0) or 0.0),
+            )
+            if cur is not None and score_key < prev_key:
+                continue
+            self._last_core_nav_hints[name_lc] = {
+                "ts": now_ts,
+                "name": name_lc,
+                "conf": float(c.get("conf", 0.5) or 0.5),
+                "score": float(c.get("score", 0.0) or 0.0),
+                "risk_score": float(c.get("risk_score", 0.0) or 0.0),
+                "distance_m": float(c.get("distance_m", 2.0) or 2.0),
+                "area_ratio": float(c.get("area_ratio", 0.01) or 0.01),
+                "center_x": float(c.get("center_x", 0.0) or 0.0),
+                "center_y": float(c.get("center_y", 0.0) or 0.0),
+            }
+
+    def _maybe_inject_core_nav_hints(
+        self,
+        stage2: List[Dict[str, Any]],
+        prepared: List[Dict[str, Any]],
+        frame_w: int,
+        frame_h: int,
+        now_ts: float,
+        scene: str,
+    ) -> List[Dict[str, Any]]:
+        stage2 = list(stage2 or [])
+        if not stage2 and not self._last_core_nav_hints:
+            return stage2
+
+        present = {self._normalize_object_name(str(o.get("name", ""))) for o in stage2}
+        support_names = {self._normalize_object_name(str(o.get("name", ""))) for o in (prepared or [])}
+        scene_lc = str(scene or "").strip().lower()
+
+        injected: List[Dict[str, Any]] = []
+        for cls in ("crosswalk", "traffic light", "blindpath", "person"):
+            if cls in present:
+                continue
+            hint = self._last_core_nav_hints.get(cls) or {}
+            if not hint:
+                continue
+            if now_ts - float(hint.get("ts", 0.0) or 0.0) > self.core_nav_memory_sec:
+                continue
+            if cls == "person" and float(hint.get("distance_m", 99.0) or 99.0) > self.core_person_memory_distance_m:
+                continue
+            if scene_lc not in CORE_NAV_HINT_SCENES and not any(self._is_core_hint_support_name(n) for n in support_names):
+                continue
+
+            center_x = float(hint.get("center_x", frame_w / 2.0) or frame_w / 2.0)
+            center_y = float(hint.get("center_y", frame_h * 0.62) or frame_h * 0.62)
+            dist_m = max(0.8, min(8.0, float(hint.get("distance_m", 2.0) or 2.0) + 0.2))
+            synthetic = {
+                "name": cls,
+                "conf": max(0.34, min(0.92, float(hint.get("conf", 0.5) or 0.5) * 0.72)),
+                "bbox": None,
+                "center_x": center_x,
+                "center_y": center_y,
+                "area_ratio": max(0.006, float(hint.get("area_ratio", 0.01) or 0.01) * 0.84),
+                "distance_m": dist_m,
+                "speed_norm": 0.0,
+                "approach_rate": 0.0,
+                "motion_dir": "hint_memory",
+                "score": max(0.33, float(hint.get("score", 0.4) or 0.4) * 0.76),
+                "inferred_from": f"core_hint:{cls}",
+            }
+            factors = self._compute_risk_factors(
+                name=cls,
+                distance_m=dist_m,
+                speed_norm=0.0,
+                approach_rate=0.0,
+                bbox=None,
+                frame_h=frame_h,
+                occlusion_factor=0.0,
+            )
+            risk_score = max(0.42, self._risk_from_factors(factors))
+            action, urgency = self._avoidance(
+                name=cls,
+                cx=center_x,
+                w=frame_w,
+                distance_m=dist_m,
+                risk_score=risk_score,
+                motion_dir="hint_memory",
+                support_factor=float(factors.get("support", 0.0)),
+                speed_norm=0.0,
+                approach_rate=0.0,
+            )
+            synthetic["risk_factors"] = factors
+            synthetic["risk_score"] = risk_score
+            synthetic["urgency"] = urgency
+            synthetic["avoidance_action"] = action
+            injected.append(synthetic)
+
+        if injected:
+            stage2.extend(injected)
+        return stage2
 
     def _is_parked_blocking_vehicle(self, item: Dict[str, Any]) -> bool:
         name_lc = self._normalize_object_name(str(item.get("name", "")))
@@ -1460,6 +1630,49 @@ class SemanticOutputEngine:
         out.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
         return out
 
+    def _force_core_nav_topk(
+        self,
+        topk: List[SemanticObject],
+        sem_objs: List[SemanticObject],
+    ) -> List[SemanticObject]:
+        out = list(topk or [])
+        if not out or not sem_objs:
+            return out
+
+        def is_core(obj: SemanticObject) -> bool:
+            return self._is_core_nav_name(getattr(obj, "name", ""))
+
+        core_pool = sorted([o for o in sem_objs if is_core(o)], key=lambda x: (x.risk_score, x.score), reverse=True)
+        if not core_pool:
+            return out
+
+        desired = 2 if len(core_pool) >= 2 else 1
+        current = sum(1 for o in out if is_core(o))
+        if current >= desired:
+            return out
+
+        for candidate in core_pool:
+            if current >= desired:
+                break
+            if candidate in out:
+                continue
+            replace_idx = None
+            for idx in range(len(out) - 1, -1, -1):
+                victim = out[idx]
+                if is_core(victim):
+                    continue
+                if str(getattr(victim, "urgency", "LOW")).upper() == "HIGH":
+                    continue
+                replace_idx = idx
+                break
+            if replace_idx is None:
+                break
+            out[replace_idx] = candidate
+            current = sum(1 for o in out if is_core(o))
+
+        out.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
+        return out
+
     def _force_low_fence_topk(
         self,
         topk: List[SemanticObject],
@@ -1724,6 +1937,18 @@ class SemanticOutputEngine:
             if distance_m <= 1.6 or risk_score >= 0.56:
                 return "前方是闸机通道，减速对准通道中央通过。", "MEDIUM"
             return "前方有闸机区域，沿通道方向继续前行。", "LOW"
+        if name_lc == "crosswalk":
+            if distance_m <= 1.8 or risk_score >= 0.58:
+                return "前方有斑马线，先对齐线带并确认车流后通过。", "MEDIUM"
+            return "前方可见斑马线，靠中线方向谨慎接近。", "LOW"
+        if name_lc == "traffic light":
+            if distance_m <= 2.0 or risk_score >= 0.58:
+                return "前方有红绿灯，请先确认灯态再决定通行。", "MEDIUM"
+            return "前方有红绿灯标识，请留意信号变化。", "LOW"
+        if name_lc == "blindpath":
+            if distance_m <= 1.8 or risk_score >= 0.55:
+                return "前方可识别到盲道，建议对齐盲道中心继续前行。", "MEDIUM"
+            return "前方疑似盲道，保持直行并继续确认走向。", "LOW"
         if name_lc in STAIR_SUPPORT_CLASSES and stair_context:
             side_zh = "左侧" if side == "left" else ("右侧" if side == "right" else "前方")
             if distance_m <= 1.8 or risk_score >= 0.52:
@@ -1974,8 +2199,10 @@ class SemanticOutputEngine:
         )[: max(1, self.stage2_topk)]
         self._update_stair_hint_cache(stage2, now_ts)
         self._update_turnstile_hint_cache(stage2, now_ts)
+        self._update_core_nav_hint_cache(stage2, now_ts)
         stage2 = self._maybe_inject_stair_hint(stage2, prepared, frame_w, frame_h, now_ts)
         stage2 = self._maybe_inject_turnstile_hint(stage2, prepared, frame_w, frame_h, now_ts, scene)
+        stage2 = self._maybe_inject_core_nav_hints(stage2, prepared, frame_w, frame_h, now_ts, scene)
         stage2 = self._enhance_stair_handrail_context(stage2, candidates, frame_w)
         if any(self._normalize_object_name(str(x.get("name", ""))) in VERTICAL_STATIC_CLASSES for x in candidates):
             vertical_best = None
@@ -2049,6 +2276,7 @@ class SemanticOutputEngine:
         topk = sem_objs[: max(1, self.output_topk)]
         topk = self._force_stair_handrail_topk(topk, sem_objs)
         topk = self._force_vertical_static_topk(topk, sem_objs)
+        topk = self._force_core_nav_topk(topk, sem_objs)
         topk = self._force_roadside_obstacle_topk(topk, sem_objs)
         topk = self._force_low_fence_topk(topk, sem_objs)
         is_dynamic = any((o.name or "").strip().lower() in DYNAMIC_CLASSES and o.distance_m <= 3.0 for o in topk)

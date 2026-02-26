@@ -463,3 +463,40 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_station_mode.py' -v` passed.
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_*.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile text_reader.py tests/test_text_reader_station_mode.py` passed.
+
+## 2026-02-27 01:44 +0800 - Task #18 completed
+- Selected next pending task by AGENT order: `#18 Improve core model outputs for traffic/crosswalk/blindpath/person/stairs/turnstile`.
+- Root-cause evidence:
+  - Core navigation entities lacked a unified priority set, so mixed scenes could let key navigation cues be squeezed by non-core classes.
+  - `blindpath` aliases were not normalized (`blind path/tactile paving` etc. inconsistent).
+  - Crosswalk/traffic-light/blindpath cues had no generic short-memory reinjection path for brief miss frames.
+- Implemented task scope (`semantic_output.py`):
+  - Added core-nav taxonomy and priority controls:
+    - `CORE_NAV_CLASSES`
+    - `CORE_NAV_PRIORITY_SCENES`
+    - `CORE_NAV_HINT_SCENES`
+  - Added blindpath normalization and naming:
+    - aliases (`blind path/blind_path/tactile paving/... -> blindpath`)
+    - `NAME_ZH` mapping for `blindpath`.
+  - Added core-nav score boost in `_compute_score(...)` for traffic/crosswalk/blindpath/person/stairs/turnstile entities.
+  - Added core-nav hint memory:
+    - `_update_core_nav_hint_cache(...)`
+    - `_maybe_inject_core_nav_hints(...)`
+    - brief miss reinjection for `crosswalk/traffic light/blindpath/person` under scene/support constraints.
+  - Added core-nav output safeguard:
+    - `_force_core_nav_topk(...)` keeps core entities in final Top-K when present.
+  - Added dedicated guidance actions for:
+    - `crosswalk`
+    - `traffic light`
+    - `blindpath`
+- Added tests:
+  - `tests/test_semantic_core_nav_consistency.py`
+    - core whitelist includes required entities.
+    - blindpath aliases normalize correctly.
+    - core entities outrank generic furniture in street-scene scoring.
+    - crosswalk cue remains stable on brief miss frame via hint memory.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_core_nav_consistency.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_*.py' -v` passed (cross-module regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_core_nav_consistency.py text_reader.py tests/test_text_reader_station_mode.py` passed.

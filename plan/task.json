@@ -274,8 +274,8 @@
         "Regression replay indicates improved detection consistency."
       ],
       "dependencies": [3, 8, 9],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 19,
