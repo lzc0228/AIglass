@@ -301,6 +301,19 @@ DYNAMIC_CLASSES = {
     "scooter",
 }
 
+LABEL_ALIASES = {
+    "stair": "stairs",
+    "staircase": "stairs",
+    "stairway": "stairs",
+    "step": "stairs",
+    "steps": "stairs",
+    "hand rail": "handrail",
+    "rail": "railing",
+}
+
+STAIR_LIKE_CLASSES = {"stairs", "escalator"}
+STAIR_SUPPORT_CLASSES = {"handrail", "railing"}
+
 
 @dataclass
 class SemanticObject:
@@ -392,11 +405,15 @@ class SemanticOutputEngine:
         self.poster_speed_max = float(os.getenv("AIGLASS_POSTER_SPEED_MAX", "0.05"))
         self.poster_approach_abs_max = float(os.getenv("AIGLASS_POSTER_APPROACH_ABS_MAX", "0.012"))
         self.poster_distance_min_m = float(os.getenv("AIGLASS_POSTER_DISTANCE_MIN_M", "1.6"))
+        self.stair_memory_sec = float(os.getenv("AIGLASS_STAIR_MEMORY_SEC", "1.8"))
+        self.stair_support_min_conf = float(os.getenv("AIGLASS_STAIR_SUPPORT_MIN_CONF", "0.35"))
+        self.stair_hint_min_risk = float(os.getenv("AIGLASS_STAIR_HINT_MIN_RISK", "0.46"))
 
         # 稳定性指标（WP4 会进一步结合 IMU）
         self.prev_signature: Optional[str] = None
         self.jump_count: int = 0
         self._track_cache: Dict[str, List[Dict[str, float]]] = defaultdict(list)
+        self._last_stair_hint: Optional[Dict[str, Any]] = None
         self.scene_strategies = list(self._SCENE_STRATEGIES)
         self._load_scene_strategies()
 
@@ -742,12 +759,110 @@ class SemanticOutputEngine:
         elif risk_score >= 0.45:
             urgency = "MEDIUM"
 
-        name_lc = (name or "").strip().lower()
+        name_lc = self._normalize_object_name(name)
         if name_lc in DYNAMIC_CLASSES and distance_m <= 2.0 and motion_dir.startswith("approaching_"):
             urgency = "HIGH"
         elif distance_m <= 1.2 and urgency == "LOW":
             urgency = "MEDIUM"
         return urgency
+
+    def _normalize_object_name(self, name: str) -> str:
+        k = (name or "").strip().lower()
+        if not k:
+            return ""
+        return LABEL_ALIASES.get(k, k)
+
+    def _is_stair_like_name(self, name: str) -> bool:
+        return self._normalize_object_name(name) in STAIR_LIKE_CLASSES
+
+    def _is_stair_support_name(self, name: str) -> bool:
+        return self._normalize_object_name(name) in STAIR_SUPPORT_CLASSES
+
+    def _update_stair_hint_cache(self, candidates: List[Dict[str, Any]], now_ts: float):
+        stair_candidates = [c for c in (candidates or []) if self._is_stair_like_name(str(c.get("name", "")))]
+        if not stair_candidates:
+            return
+        best = max(
+            stair_candidates,
+            key=lambda x: (float(x.get("risk_score", 0.0) or 0.0), float(x.get("score", 0.0) or 0.0)),
+        )
+        self._last_stair_hint = {
+            "ts": now_ts,
+            "name": self._normalize_object_name(str(best.get("name", ""))),
+            "conf": float(best.get("conf", 0.5) or 0.5),
+            "score": float(best.get("score", 0.0) or 0.0),
+            "risk_score": float(best.get("risk_score", 0.0) or 0.0),
+            "distance_m": float(best.get("distance_m", 2.0) or 2.0),
+            "area_ratio": float(best.get("area_ratio", 0.01) or 0.01),
+            "center_x": float(best.get("center_x", 0.0) or 0.0),
+            "center_y": float(best.get("center_y", 0.0) or 0.0),
+        }
+
+    def _maybe_inject_stair_hint(
+        self,
+        stage2: List[Dict[str, Any]],
+        prepared: List[Dict[str, Any]],
+        frame_w: int,
+        frame_h: int,
+        now_ts: float,
+    ) -> List[Dict[str, Any]]:
+        if any(self._is_stair_like_name(str(o.get("name", ""))) for o in (stage2 or [])):
+            return stage2
+        hint = self._last_stair_hint or {}
+        if not hint:
+            return stage2
+        if now_ts - float(hint.get("ts", 0.0) or 0.0) > self.stair_memory_sec:
+            return stage2
+
+        has_support = any(
+            self._is_stair_support_name(str(o.get("name", "")))
+            and float(o.get("conf", 0.0) or 0.0) >= self.stair_support_min_conf
+            for o in (prepared or [])
+        )
+        if not has_support:
+            return stage2
+
+        dist_m = float(hint.get("distance_m", 2.0) or 2.0)
+        synthetic = {
+            "name": "stairs",
+            "conf": max(0.35, min(0.95, float(hint.get("conf", 0.5) or 0.5) * 0.72)),
+            "bbox": None,
+            "center_x": float(hint.get("center_x", frame_w / 2.0) or frame_w / 2.0),
+            "center_y": float(hint.get("center_y", frame_h * 0.62) or frame_h * 0.62),
+            "area_ratio": max(0.006, float(hint.get("area_ratio", 0.01) or 0.01) * 0.85),
+            "distance_m": max(0.8, min(8.0, dist_m)),
+            "speed_norm": 0.0,
+            "approach_rate": 0.0,
+            "motion_dir": "hint_memory",
+            "score": max(0.35, float(hint.get("score", 0.4) or 0.4) * 0.78),
+        }
+        factors = self._compute_risk_factors(
+            name="stairs",
+            distance_m=float(synthetic.get("distance_m", 2.0)),
+            speed_norm=0.0,
+            approach_rate=0.0,
+            bbox=None,
+            frame_h=frame_h,
+            occlusion_factor=0.0,
+        )
+        risk_score = max(self.stair_hint_min_risk, self._risk_from_factors(factors))
+        action, urgency = self._avoidance(
+            name="stairs",
+            cx=float(synthetic.get("center_x", frame_w / 2.0)),
+            w=frame_w,
+            distance_m=float(synthetic.get("distance_m", 2.0)),
+            risk_score=risk_score,
+            motion_dir="hint_memory",
+            support_factor=float(factors.get("support", 0.0)),
+            speed_norm=0.0,
+            approach_rate=0.0,
+        )
+        synthetic["risk_factors"] = factors
+        synthetic["risk_score"] = risk_score
+        synthetic["urgency"] = urgency
+        synthetic["avoidance_action"] = action
+        synthetic["inferred_from"] = "stair_hint"
+        return [*stage2, synthetic]
 
     def _is_static_poster_like_person(
         self,
@@ -759,7 +874,7 @@ class SemanticOutputEngine:
         speed_norm: float,
         approach_rate: float,
     ) -> bool:
-        name_lc = (name or "").strip().lower()
+        name_lc = self._normalize_object_name(name)
         if name_lc != "person":
             return False
         if float(distance_m) < self.poster_distance_min_m:
@@ -786,6 +901,7 @@ class SemanticOutputEngine:
         speed_norm: float = 0.0,
         approach_rate: float = 0.0,
     ) -> Tuple[str, str]:
+        name_lc = self._normalize_object_name(name)
         x_ratio = cx / max(1.0, float(w))
         side = "center"
         if x_ratio < 0.4:
@@ -793,7 +909,13 @@ class SemanticOutputEngine:
         elif x_ratio > 0.6:
             side = "right"
 
-        urgency = self._infer_urgency(name, distance_m, risk_score, motion_dir)
+        urgency = self._infer_urgency(name_lc, distance_m, risk_score, motion_dir)
+        if name_lc in STAIR_LIKE_CLASSES:
+            if distance_m <= 1.2 or risk_score >= 0.72:
+                return "前方台阶较近，先停一下，确认后再走。", "HIGH"
+            if distance_m <= 2.8 or risk_score >= 0.45:
+                return "注意台阶，放慢脚步，建议靠扶手通过。", "MEDIUM"
+            return "前方可能有台阶，保持脚下探测并谨慎前行。", "LOW"
         if self._is_static_poster_like_person(
             name=name,
             distance_m=distance_m,
@@ -869,7 +991,8 @@ class SemanticOutputEngine:
         """
         prepared: List[Dict[str, Any]] = []
         for o in raw_objects or []:
-            name = str(o.get("name", "")).strip()
+            raw_name = str(o.get("name", "")).strip()
+            name = self._normalize_object_name(raw_name)
             if not name:
                 continue
             conf = o.get("conf")
@@ -879,7 +1002,7 @@ class SemanticOutputEngine:
                 conf_f = 0.5
             if conf_f < self.conf_threshold:
                 continue
-            prepared.append({**o, "name": name, "conf": conf_f})
+            prepared.append({**o, "name": name, "raw_name": raw_name, "conf": conf_f})
 
         names = [str(o.get("name", "")).strip().lower() for o in prepared]
         scene, scene_confidence = self.infer_scene_with_confidence(names, mean_luma=mean_luma)
@@ -959,6 +1082,13 @@ class SemanticOutputEngine:
 
         stage2 = sorted(
             candidates,
+            key=lambda x: (float(x.get("risk_score", 0.0) or 0.0), float(x.get("score", 0.0) or 0.0)),
+            reverse=True,
+        )[: max(1, self.stage2_topk)]
+        self._update_stair_hint_cache(stage2, now_ts)
+        stage2 = self._maybe_inject_stair_hint(stage2, prepared, frame_w, frame_h, now_ts)
+        stage2 = sorted(
+            stage2,
             key=lambda x: (float(x.get("risk_score", 0.0) or 0.0), float(x.get("score", 0.0) or 0.0)),
             reverse=True,
         )[: max(1, self.stage2_topk)]

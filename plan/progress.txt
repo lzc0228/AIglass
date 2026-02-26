@@ -64,3 +64,30 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
   - Poster-like frame probe now outputs downgraded action:
     - `action=疑似海报人像，先保持直行并持续观察`
+
+## 2026-02-27 00:27 +0800 - Task #3 completed
+- Selected next pending task by AGENT order: `#3 Improve stair/step detection reliability`.
+- Environment/startup check (venv `openai_glasses`) and direct run completed:
+  - `python app_main.py` starts and writes log `log/app_main-20260227_002313.log`.
+  - Existing blockers unchanged: missing `dashscope`, and CUDA incompatibility (`sm_120` vs current torch build) causing GPU model warmup failures.
+- Root-cause evidence:
+  - Stair labels were not normalized (`step/steps/staircase` unstable), causing scene/object cue jitter.
+  - Stair cue could drop on intermittent misses even when `handrail/railing` remained, reducing guidance continuity.
+- Implemented task scope (`semantic_output.py`):
+  - Added stair label normalization aliases (`step/steps/stair/staircase -> stairs`).
+  - Added stair-specific guidance policy (near stairs -> stronger caution, far stairs -> cautious reminder).
+  - Added short stair hint memory + support-cue reinjection:
+    - If recent stair cue exists and current frame still has support evidence (`handrail/railing`), reinject stair cue for continuity.
+    - If no support evidence, do not reinject (avoid hallucination).
+- Added tests:
+  - `tests/test_semantic_stair_stability.py`
+    - `step` label normalization to `stairs`
+    - intermittent stair miss + handrail support still keeps stair guidance
+    - no support cue means no stair reinjection
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stair_stability.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_poster_person_filter.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_audio_routing_policy.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
+  - Stair replay probe (2-frame synthetic) result:
+    - frame1 includes stairs+handrail, frame2 only handrail; frame2 output still contains stair cue (`frame2_objs=['handrail','stairs']`).

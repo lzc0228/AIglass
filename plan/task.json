@@ -47,8 +47,8 @@
         "Stair scene replay shows stable stair guidance."
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 4,
