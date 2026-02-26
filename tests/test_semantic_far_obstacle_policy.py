@@ -24,10 +24,10 @@ class SemanticFarObstaclePolicyTests(unittest.TestCase):
         self.assertNotIn("避让", action)
         self.assertTrue(("留意" in action) or ("观察" in action) or ("提醒" in action) or ("注意" in action))
 
-    def test_near_static_obstacle_still_allows_avoidance_instruction(self):
+    def test_near_straight_ahead_obstacle_still_allows_avoidance_instruction(self):
         action, _urgency = self.engine._avoidance(
             name="chair",
-            cx=1000,
+            cx=640,
             w=1280,
             distance_m=1.3,
             risk_score=0.48,

@@ -289,8 +289,8 @@
         "Risk/urgency policy tests confirm trigger narrowing."
       ],
       "dependencies": [11, 13],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 20,

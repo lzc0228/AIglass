@@ -500,3 +500,30 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_*.py' -v` passed (cross-module regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_core_nav_consistency.py text_reader.py tests/test_text_reader_station_mode.py` passed.
+
+## 2026-02-27 01:51 +0800 - Task #19 completed
+- Selected next pending task by AGENT order: `#19 Avoidance trigger only for straight-ahead urgent/moving threats`.
+- Environment/startup check (after activating `openai_glasses`) and direct run completed:
+  - `python app_main.py` launched and created log file `log/app_main-20260227_014758.log`.
+  - Environment blockers observed:
+    - missing SDK deps: `dashscope`, `openai` (`ModuleNotFoundError` in env import check and startup warning).
+    - CUDA compatibility mismatch on RTX 5090 (`sm_120`) with current torch build causing `no kernel image is available for execution on the device`.
+- Minimal unblock steps recorded:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses`
+  - `pip install dashscope openai`
+  - temporary CPU fallback: `AIGLASS_DEVICE=cpu` (or install torch/ultralytics build compatible with `sm_120`).
+- Root-cause evidence:
+  - `_avoidance()` still produced directional bypass for off-center static obstacles (e.g., `chair` on right yielded `从左侧绕开。`), violating task#19 trigger policy.
+- Implemented task scope:
+  - `semantic_output.py`
+    - added active-avoidance gate: only trigger directional/avoid actions when obstacle is straight-ahead (`12点方向`) or an urgent approaching threat.
+    - for off-center non-trigger cases, switched to reminder-style guidance (no `绕开/避让/靠左/靠右` action text).
+    - aligned structured output action classification with actual action text (`ActionType` now inferred from stop/avoid tokens instead of urgency-only mapping).
+  - tests:
+    - added `tests/test_semantic_avoidance_trigger_policy.py` (TDD red->green) for trigger narrowing behavior.
+    - updated `tests/test_semantic_far_obstacle_policy.py` near-obstacle assertion to straight-ahead scenario, consistent with task#19 policy.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_avoidance_trigger_policy.py' -v` passed (after initial red failure).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_*.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_avoidance_trigger_policy.py tests/test_semantic_far_obstacle_policy.py` passed.

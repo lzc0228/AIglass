@@ -1986,6 +1986,26 @@ class SemanticOutputEngine:
         if far_static_allowed:
             return f"前方远处有{_zh_name(name_lc)}，先保持直行并留意环境变化。", "LOW"
 
+        is_straight_ahead = side == "center"
+        is_approaching_motion = str(motion_dir or "").startswith("approaching_")
+        is_urgent_approaching = bool(is_approaching_motion and urgency in ("MEDIUM", "HIGH"))
+        allow_active_avoidance = bool(is_straight_ahead or is_urgent_approaching)
+
+        if not allow_active_avoidance:
+            side_zh = "左侧" if side == "left" else ("右侧" if side == "right" else "前方")
+            blocked_urgency = urgency if urgency in ("MEDIUM", "HIGH") else "LOW"
+            if "left" in blocked and "right" in blocked:
+                return "前方两侧有停靠车辆占道，保持直行并留意可通行空隙。", blocked_urgency
+            if "right" in blocked:
+                return "右侧有停靠车辆占道，保持直行并留意前方空隙。", blocked_urgency
+            if "left" in blocked:
+                return "左侧有停靠车辆占道，保持直行并留意前方空隙。", blocked_urgency
+            if urgency == "HIGH":
+                return f"{side_zh}有{_zh_name(name_lc)}，风险较高，先减速观察再通过。", "MEDIUM"
+            if urgency == "MEDIUM":
+                return f"{side_zh}有{_zh_name(name_lc)}，保持直行并注意动态变化。", urgency
+            return f"{side_zh}有{_zh_name(name_lc)}，先保持直行并留意环境变化。", "LOW"
+
         if support_factor >= 0.75 and urgency in ("HIGH", "MEDIUM"):
             return "注意头部高度，稍微低头并从侧面绕行。", urgency
         if urgency == "HIGH":
@@ -2474,13 +2494,19 @@ class SemanticOutputEngine:
                 urg = str(getattr(o, "urgency", "LOW") or "LOW").upper()
                 urgency = UrgencyLevel.HIGH if urg == "HIGH" else (UrgencyLevel.MEDIUM if urg == "MEDIUM" else UrgencyLevel.LOW)
 
-                is_moving = name_lc in DYNAMIC_CLASSES
-                is_approaching = bool(is_moving and meters <= 2.0)
+                motion_dir = str(getattr(o, "motion_dir", "unknown") or "unknown")
+                speed_norm = float(getattr(o, "speed_norm", 0.0) or 0.0)
+                is_moving = bool(name_lc in DYNAMIC_CLASSES and (motion_dir != "unknown" or speed_norm >= 0.05))
+                is_approaching = bool(motion_dir.startswith("approaching_"))
 
                 action_text = str(getattr(o, "avoidance_action", "") or "").rstrip("。")
-                if urgency == UrgencyLevel.HIGH:
+                has_stop_action = "停" in action_text
+                has_avoid_action = any(
+                    token in action_text for token in ("绕开", "避让", "绕行", "靠左", "靠右", "侧面通过")
+                )
+                if has_stop_action or urgency == UrgencyLevel.HIGH:
                     action_type = ActionType.STOP
-                elif urgency == UrgencyLevel.MEDIUM:
+                elif has_avoid_action:
                     action_type = ActionType.AVOID
                 else:
                     action_type = ActionType.CONTINUE
