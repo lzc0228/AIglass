@@ -77,8 +77,8 @@
         "Stair + handrail frames produce handrail guidance."
       ],
       "dependencies": [3],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 6,

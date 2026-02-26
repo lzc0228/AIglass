@@ -123,3 +123,32 @@
   - Sample-frame probe output includes glass/handle/switch directional guidance:
     - `names=['door','glass_door','light_switch']`
     - text contains `12点方向...有玻璃门...门把手...`
+
+## 2026-02-27 00:47 +0800 - Task #5 completed
+- Selected next pending task by AGENT order: `#5 Add stair handrail guidance`.
+- Environment/startup check and direct run (`python app_main.py`) done before implementation:
+  - Base env (`/root/miniconda3/bin/python`) failed at startup: `ModuleNotFoundError: No module named 'cv2'`.
+  - In project env (`conda activate openai_glasses`) direct run enters startup but shows existing blockers:
+    - Missing SDK dependency warning: `dashscope` not installed.
+    - GPU runtime incompatibility on RTX 5090: `no kernel image is available for execution on the device`.
+    - Audio preload is very slow in current default mode (`full`), causing long startup phase.
+- Minimal unblock steps recorded:
+  - Use project env: `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses`.
+  - Install missing SDK: `pip install dashscope`.
+  - For current GPU mismatch, run CPU fallback (`AIGLASS_DEVICE=cpu`) or install a torch/ultralytics build compatible with `sm_120`.
+  - Optional startup speed fix: `AIGLASS_AUDIO_PRELOAD_MODE=limited` (or `off`).
+- Implemented task scope (`semantic_output.py`):
+  - Added stair-context handrail guidance action (directional扶手提示，替代泛化“绕开/避让”措辞).
+  - Added stair+handrail context enhancement to keep handrail cue in semantic priority output.
+  - Added top-k safeguard so stair context preserves both `stairs` and `handrail` cues.
+  - Extended dynamic narration branch to append handrail assist hint in stair context.
+- Added tests:
+  - `tests/test_semantic_stair_handrail_guidance.py`
+    - stair context handrail action uses directional guidance and no generic avoid wording.
+    - with competing objects, stair context output still contains `stairs` + `handrail` and扶手文本。
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stair_handrail_guidance.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_stair_stability.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_glass_guidance.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_poster_person_filter.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.

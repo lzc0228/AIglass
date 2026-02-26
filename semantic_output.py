@@ -892,6 +892,120 @@ class SemanticOutputEngine:
         synthetic["inferred_from"] = "stair_hint"
         return [*stage2, synthetic]
 
+    def _enhance_stair_handrail_context(
+        self,
+        stage2: List[Dict[str, Any]],
+        candidates: List[Dict[str, Any]],
+        frame_w: int,
+    ) -> List[Dict[str, Any]]:
+        stage2 = list(stage2 or [])
+        if not stage2:
+            return stage2
+
+        has_stair = any(self._is_stair_like_name(str(o.get("name", ""))) for o in stage2)
+        if not has_stair:
+            return stage2
+
+        stair_risk = max(
+            [
+                float(o.get("risk_score", 0.0) or 0.0)
+                for o in stage2
+                if self._is_stair_like_name(str(o.get("name", "")))
+            ]
+            or [0.56]
+        )
+        support_items = [o for o in stage2 if self._is_stair_support_name(str(o.get("name", "")))]
+
+        if not support_items:
+            best_support = None
+            for o in (candidates or []):
+                if not self._is_stair_support_name(str(o.get("name", ""))):
+                    continue
+                if best_support is None:
+                    best_support = o
+                    continue
+                key_cur = (float(o.get("risk_score", 0.0) or 0.0), float(o.get("score", 0.0) or 0.0))
+                key_best = (
+                    float(best_support.get("risk_score", 0.0) or 0.0),
+                    float(best_support.get("score", 0.0) or 0.0),
+                )
+                if key_cur > key_best:
+                    best_support = o
+            if best_support is not None:
+                support_copy = dict(best_support)
+                support_copy["risk_score"] = max(float(support_copy.get("risk_score", 0.0) or 0.0), 0.56)
+                stage2.append(support_copy)
+                support_items = [support_copy]
+
+        for o in stage2:
+            if self._is_stair_like_name(str(o.get("name", ""))):
+                o["risk_score"] = max(float(o.get("risk_score", 0.0) or 0.0), 0.60)
+                continue
+            if not self._is_stair_support_name(str(o.get("name", ""))):
+                continue
+            o["risk_score"] = max(float(o.get("risk_score", 0.0) or 0.0), min(0.58, max(0.54, stair_risk)))
+            action, urgency = self._avoidance(
+                name=str(o.get("name", "")),
+                cx=float(o.get("center_x", frame_w / 2.0)),
+                w=frame_w,
+                distance_m=float(o.get("distance_m", 0.0) or 0.0),
+                risk_score=float(o.get("risk_score", 0.0) or 0.0),
+                motion_dir=str(o.get("motion_dir", "unknown")),
+                support_factor=float((o.get("risk_factors") or {}).get("support", 0.0)),
+                speed_norm=float(o.get("speed_norm", 0.0) or 0.0),
+                approach_rate=float(o.get("approach_rate", 0.0) or 0.0),
+                stair_context=True,
+            )
+            o["avoidance_action"] = action
+            o["urgency"] = urgency
+        return stage2
+
+    def _force_stair_handrail_topk(
+        self,
+        topk: List[SemanticObject],
+        sem_objs: List[SemanticObject],
+    ) -> List[SemanticObject]:
+        out = list(topk or [])
+        if not out:
+            return out
+        if not sem_objs:
+            return out
+
+        has_stair_any = any(self._is_stair_like_name(o.name) for o in sem_objs)
+        has_support_any = any(self._is_stair_support_name(o.name) for o in sem_objs)
+        if not (has_stair_any and has_support_any):
+            return out
+
+        best_stair = next((o for o in sem_objs if self._is_stair_like_name(o.name)), None)
+        best_support = next((o for o in sem_objs if self._is_stair_support_name(o.name)), None)
+        if best_stair is None or best_support is None:
+            return out
+
+        def _replace_if_missing(
+            objs: List[SemanticObject],
+            required_obj: SemanticObject,
+            checker,
+        ) -> List[SemanticObject]:
+            if any(checker(o.name) for o in objs):
+                return objs
+            if required_obj in objs:
+                return objs
+            replace_idx = None
+            for idx in range(len(objs) - 1, -1, -1):
+                n = objs[idx].name
+                if not self._is_stair_like_name(n) and not self._is_stair_support_name(n):
+                    replace_idx = idx
+                    break
+            if replace_idx is None:
+                replace_idx = len(objs) - 1
+            objs[replace_idx] = required_obj
+            return objs
+
+        out = _replace_if_missing(out, best_stair, self._is_stair_like_name)
+        out = _replace_if_missing(out, best_support, self._is_stair_support_name)
+        out.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
+        return out
+
     def _pair_distance_norm(
         self,
         a: Dict[str, Any],
@@ -1030,6 +1144,7 @@ class SemanticOutputEngine:
         support_factor: float,
         speed_norm: float = 0.0,
         approach_rate: float = 0.0,
+        stair_context: bool = False,
     ) -> Tuple[str, str]:
         name_lc = self._normalize_object_name(name)
         x_ratio = cx / max(1.0, float(w))
@@ -1054,6 +1169,15 @@ class SemanticOutputEngine:
             return "门把手在该方向，可据此确认入口。", "LOW"
         if name_lc == "light_switch":
             return "附近有灯光开关，可作为门口位置参考。", "LOW"
+        if name_lc in STAIR_SUPPORT_CLASSES and stair_context:
+            side_zh = "左侧" if side == "left" else ("右侧" if side == "right" else "前方")
+            if distance_m <= 1.8 or risk_score >= 0.52:
+                if side == "left":
+                    return "左侧有楼梯扶手，建议靠左握稳后再通过。", "MEDIUM"
+                if side == "right":
+                    return "右侧有楼梯扶手，建议靠右握稳后再通过。", "MEDIUM"
+                return "前方有楼梯扶手，靠近后先扶稳再通过。", "MEDIUM"
+            return f"{side_zh}有楼梯扶手，可沿扶手方向谨慎通行。", "LOW"
         if name_lc in STAIR_LIKE_CLASSES:
             if distance_m <= 1.2 or risk_score >= 0.72:
                 return "前方台阶较近，先停一下，确认后再走。", "HIGH"
@@ -1235,6 +1359,7 @@ class SemanticOutputEngine:
         )[: max(1, self.stage2_topk)]
         self._update_stair_hint_cache(stage2, now_ts)
         stage2 = self._maybe_inject_stair_hint(stage2, prepared, frame_w, frame_h, now_ts)
+        stage2 = self._enhance_stair_handrail_context(stage2, candidates, frame_w)
         stage2 = sorted(
             stage2,
             key=lambda x: (float(x.get("risk_score", 0.0) or 0.0), float(x.get("score", 0.0) or 0.0)),
@@ -1286,6 +1411,7 @@ class SemanticOutputEngine:
         sem_objs.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
 
         topk = sem_objs[: max(1, self.output_topk)]
+        topk = self._force_stair_handrail_topk(topk, sem_objs)
         is_dynamic = any((o.name or "").strip().lower() in DYNAMIC_CLASSES and o.distance_m <= 3.0 for o in topk)
         if imu_yaw_rate_dps is not None and abs(float(imu_yaw_rate_dps)) >= self.turn_rate_thr_dps:
             is_dynamic = True
@@ -1340,7 +1466,16 @@ class SemanticOutputEngine:
             action = (o.avoidance_action or "").rstrip("。")
             direction = f"{o.clock}点方向({o.lr_zh})"
             scene_prefix = f"{scene_zh}，" if scene_zh else ""
-            return f"{prefix}{scene_prefix}{direction}{dist_txt}有{_zh_name(o.name)}，{action}"
+            sentence = f"{prefix}{scene_prefix}{direction}{dist_txt}有{_zh_name(o.name)}，{action}"
+            has_stair = any(self._is_stair_like_name(str(obj.name)) for obj in objs)
+            support_obj = next(
+                (obj for obj in objs if self._is_stair_support_name(str(obj.name))),
+                None,
+            )
+            if has_stair and support_obj is not None and "扶手" not in sentence:
+                support_side = support_obj.lr_zh or "前方"
+                sentence += f"，{support_side}有扶手可辅助通行"
+            return sentence
 
         # 稳定环境：先整体（场景），再关键点
         prefix = "前方环境还算稳定。"
