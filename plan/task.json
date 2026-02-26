@@ -138,8 +138,8 @@
         "Blind path replay shows improved continuity."
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 10,

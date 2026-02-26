@@ -221,3 +221,25 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_restroom_mode.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile text_reader.py` passed.
+
+## 2026-02-27 01:03 +0800 - Task #9 completed
+- Selected next pending task by AGENT order: `#9 Improve blind path detection accuracy`.
+- Root-cause evidence:
+  - Blind-path navigation path mask was used frame-by-frame only; short miss frames directly dropped mask, causing continuity jitter.
+  - No lightweight hold mechanism for brief detection gaps/noise.
+- Implemented task scope (`workflow_blindpath.py`):
+  - Added blind-path continuity stabilizer `_stabilize_blind_path_presence(...)`.
+  - Added short miss hold policy with configurable thresholds:
+    - `AIGLASS_BLINDPATH_MIN_AREA_RATIO`
+    - `AIGLASS_BLINDPATH_MISS_HOLD_FRAMES`
+  - Added tiny-noise rejection + short miss fallback to previous stable blind-path mask.
+  - Integrated stabilizer into `process_frame()` right after YOLO blindpath detection.
+  - Added reset-state cleanup for new continuity cache fields.
+- Added tests:
+  - `tests/test_blindpath_mask_stability.py`
+    - short miss frames keep previous blind-path mask continuity.
+    - tiny noisy mask is treated as miss and falls back to stable mask.
+    - new valid mask resets miss streak correctly.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_blindpath_mask_stability.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile workflow_blindpath.py` passed.
