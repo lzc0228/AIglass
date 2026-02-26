@@ -169,8 +169,8 @@
         "Speech generation differentiates far reminders vs near avoidance."
       ],
       "dependencies": [10],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 12,

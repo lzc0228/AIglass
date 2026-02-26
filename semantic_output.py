@@ -457,6 +457,8 @@ class SemanticOutputEngine:
         self.turnstile_memory_sec = float(os.getenv("AIGLASS_TURNSTILE_MEMORY_SEC", "2.2"))
         self.turnstile_support_min_conf = float(os.getenv("AIGLASS_TURNSTILE_SUPPORT_MIN_CONF", "0.35"))
         self.turnstile_hint_min_risk = float(os.getenv("AIGLASS_TURNSTILE_HINT_MIN_RISK", "0.44"))
+        self.far_static_distance_m = float(os.getenv("AIGLASS_FAR_STATIC_DISTANCE_M", "3.2"))
+        self.far_static_risk_max = float(os.getenv("AIGLASS_FAR_STATIC_RISK_MAX", "0.52"))
         self.glass_pair_max_dist_norm = float(os.getenv("AIGLASS_GLASS_PAIR_MAX_DIST_NORM", "0.24"))
         self.glass_switch_max_dist_norm = float(os.getenv("AIGLASS_GLASS_SWITCH_MAX_DIST_NORM", "0.32"))
 
@@ -1342,6 +1344,18 @@ class SemanticOutputEngine:
             approach_rate=approach_rate,
         ):
             return "疑似海报人像，先保持直行并持续观察。", "LOW"
+
+        far_static_allowed = (
+            name_lc not in DYNAMIC_CLASSES
+            and name_lc not in STAIR_LIKE_CLASSES
+            and name_lc not in STAIR_SUPPORT_CLASSES
+            and name_lc not in {"glass_door", "glass_window", "door_handle", "light_switch", "turnstile"}
+            and not str(motion_dir or "").startswith("approaching_")
+            and float(distance_m) >= self.far_static_distance_m
+            and float(risk_score) <= self.far_static_risk_max
+        )
+        if far_static_allowed:
+            return f"前方远处有{_zh_name(name_lc)}，先保持直行并留意环境变化。", "LOW"
 
         if support_factor >= 0.75 and urgency in ("HIGH", "MEDIUM"):
             return "注意头部高度，稍微低头并从侧面绕行。", urgency

@@ -266,3 +266,26 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_turnstile_persistence.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile app_main.py` passed.
+
+## 2026-02-27 01:08 +0800 - Task #11 completed
+- Selected next pending task by AGENT order: `#11 Far obstacle policy: remind only, no avoidance action`.
+- Root-cause evidence:
+  - Generic avoidance policy produced left/right绕开 instructions even for far static obstacles.
+- Implemented task scope (`semantic_output.py`):
+  - Added configurable far-static policy thresholds:
+    - `AIGLASS_FAR_STATIC_DISTANCE_M`
+    - `AIGLASS_FAR_STATIC_RISK_MAX`
+  - Added far-static reminder branch in `_avoidance(...)`:
+    - for static, non-approaching, sufficiently far & low-risk objects, emit reminder text only.
+    - suppress directional avoid wording for these far-static cases.
+  - Kept near-static and dynamic/approaching behaviors unchanged.
+- Added tests:
+  - `tests/test_semantic_far_obstacle_policy.py`
+    - far static obstacle -> reminder text, no绕开/避让.
+    - near static obstacle -> still allows avoidance instruction.
+    - dynamic approaching object not forced into static reminder policy.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_far_obstacle_policy.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_distance_format.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_turnstile_persistence.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
