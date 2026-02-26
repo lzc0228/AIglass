@@ -213,6 +213,8 @@ NAME_ZH = {
     "cone": "锥桶",
     "stone": "石头",
     "box": "箱子",
+    "trash bin": "垃圾桶",
+    "trash can": "垃圾桶",
     "signpost": "指示牌",
     "tree": "树",
     "utility pole": "电线杆",
@@ -319,6 +321,23 @@ PARKED_BLOCKING_VEHICLE_CLASSES = {
     "scooter",
 }
 
+ROADSIDE_OBSTACLE_CLASSES = {
+    "trash bin",
+    "bicycle",
+    "scooter",
+    "motorcycle",
+}
+ROADSIDE_PRIORITY_SCENES = {
+    "street",
+    "sidewalk",
+    "crossroad",
+    "bus_stop",
+    "parking",
+    "park",
+    "square",
+    "construction",
+}
+
 LABEL_ALIASES = {
     "stair": "stairs",
     "staircase": "stairs",
@@ -359,6 +378,23 @@ LABEL_ALIASES = {
     "tree-trunk": "tree",
     "palm tree": "tree",
     "street tree": "tree",
+    "trash can": "trash bin",
+    "trashcan": "trash bin",
+    "garbage can": "trash bin",
+    "garbage bin": "trash bin",
+    "waste bin": "trash bin",
+    "wastebasket": "trash bin",
+    "dustbin": "trash bin",
+    "recycle bin": "trash bin",
+    "recycling bin": "trash bin",
+    "rubbish bin": "trash bin",
+    "e-bike": "scooter",
+    "ebike": "scooter",
+    "e bike": "scooter",
+    "electric bike": "scooter",
+    "electric bicycle": "scooter",
+    "bike": "bicycle",
+    "motor bike": "motorcycle",
     "telephone pole": "utility pole",
     "lamp post": "light pole",
     "lightpost": "light pole",
@@ -745,6 +781,7 @@ class SemanticOutputEngine:
         structure_bonus = 1.0
         indoor_plant_boost = 1.0
         vertical_bonus = 1.0
+        roadside_bonus = 1.0
         if k == "potted plant" and scene_lc in INDOOR_SCENES:
             indoor_plant_boost = 2.2 + min(1.8, max(0.0, float(area_ratio)) * 18.0)
         if k in VERTICAL_STATIC_CLASSES:
@@ -755,7 +792,11 @@ class SemanticOutputEngine:
             structure_bonus = 1.25
         elif k in {"door_handle", "light_switch"}:
             structure_bonus = 1.08
-        return base * tw * sw * up * prox * dyn * structure_bonus * indoor_plant_boost * vertical_bonus
+        if k in ROADSIDE_OBSTACLE_CLASSES:
+            roadside_bonus = 1.18 + min(0.50, max(0.0, float(area_ratio)) * 10.0)
+            if scene_lc in ROADSIDE_PRIORITY_SCENES:
+                roadside_bonus *= 1.25
+        return base * tw * sw * up * prox * dyn * structure_bonus * indoor_plant_boost * vertical_bonus * roadside_bonus
 
     def _best_previous_track(self, name: str, cx: float, cy: float, now_ts: float) -> Optional[Dict[str, float]]:
         name_lc = self._normalize_object_name(name)
@@ -1293,6 +1334,70 @@ class SemanticOutputEngine:
         out.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
         return out
 
+    def _force_roadside_obstacle_topk(
+        self,
+        topk: List[SemanticObject],
+        sem_objs: List[SemanticObject],
+    ) -> List[SemanticObject]:
+        out = list(topk or [])
+        if not out or not sem_objs:
+            return out
+
+        def is_target(obj: SemanticObject) -> bool:
+            return self._normalize_object_name(getattr(obj, "name", "")) in ROADSIDE_OBSTACLE_CLASSES
+
+        target_pool = sorted(
+            [o for o in sem_objs if is_target(o)],
+            key=lambda x: (x.risk_score, x.score),
+            reverse=True,
+        )
+        if not target_pool:
+            return out
+
+        desired = 2 if len(target_pool) >= 2 else 1
+        current = sum(1 for o in out if is_target(o))
+        if current >= desired:
+            return out
+
+        def is_protected(name: str) -> bool:
+            return (
+                self._is_stair_like_name(name)
+                or self._is_stair_support_name(name)
+                or self._is_turnstile_name(name)
+            )
+
+        for candidate in target_pool:
+            if current >= desired:
+                break
+            if candidate in out:
+                continue
+
+            replace_idx = None
+            for idx in range(len(out) - 1, -1, -1):
+                victim = out[idx]
+                if is_target(victim):
+                    continue
+                if is_protected(victim.name):
+                    continue
+                if str(getattr(victim, "urgency", "LOW")).upper() == "HIGH":
+                    continue
+                replace_idx = idx
+                break
+            if replace_idx is None:
+                for idx in range(len(out) - 1, -1, -1):
+                    victim = out[idx]
+                    if not is_target(victim) and not is_protected(victim.name):
+                        replace_idx = idx
+                        break
+            if replace_idx is None:
+                break
+
+            out[replace_idx] = candidate
+            current = sum(1 for o in out if is_target(o))
+
+        out.sort(key=lambda x: (x.risk_score, x.score), reverse=True)
+        return out
+
     def _pair_distance_norm(
         self,
         a: Dict[str, Any],
@@ -1788,6 +1893,7 @@ class SemanticOutputEngine:
         topk = sem_objs[: max(1, self.output_topk)]
         topk = self._force_stair_handrail_topk(topk, sem_objs)
         topk = self._force_vertical_static_topk(topk, sem_objs)
+        topk = self._force_roadside_obstacle_topk(topk, sem_objs)
         is_dynamic = any((o.name or "").strip().lower() in DYNAMIC_CLASSES and o.distance_m <= 3.0 for o in topk)
         if imu_yaw_rate_dps is not None and abs(float(imu_yaw_rate_dps)) >= self.turn_rate_thr_dps:
             is_dynamic = True

@@ -358,3 +358,31 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_parked_vehicle_side_policy.py' -v` passed.
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed.
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_parked_vehicle_side_policy.py` passed.
+
+## 2026-02-27 01:29 +0800 - Task #14 completed
+- Selected next pending task by AGENT order: `#14 Improve trash-bin/bicycle/e-bike/motorcycle obstacle detection`.
+- Root-cause evidence:
+  - Sidewalk roadside obstacle classes had weak alias coverage (e.g., `trash can`/`garbage bin`/`e-bike` not normalized to stable canonical labels).
+  - In mixed scenes with furniture competition, these target classes could lose priority in Top-K output.
+- Implemented task scope (`semantic_output.py`):
+  - Added roadside obstacle class constants:
+    - `ROADSIDE_OBSTACLE_CLASSES`
+    - `ROADSIDE_PRIORITY_SCENES`
+  - Added alias normalization:
+    - trash bin family (`trash can`/`garbage bin`/`waste bin`/etc -> `trash bin`)
+    - e-bike family (`e-bike`/`electric bike`/`ebike` -> `scooter`)
+    - related bike aliases.
+  - Added roadside score boost policy in `_compute_score(...)`:
+    - target classes get extra bonus, further boosted in street/sidewalk/bus-stop/parking-like scenes.
+  - Added output safeguard `_force_roadside_obstacle_topk(...)`:
+    - in mixed outputs, keeps roadside target classes from being squeezed out by generic furniture.
+- Added tests:
+  - `tests/test_semantic_roadside_obstacles.py`
+    - alias normalization for trash-bin/e-bike targets.
+    - target whitelist includes required classes.
+    - target classes have higher priority than generic furniture in street scene scoring.
+    - output keeps multiple target roadside classes under competition.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_roadside_obstacles.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_roadside_obstacles.py` passed.
