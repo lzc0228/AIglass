@@ -463,6 +463,7 @@ STAIR_LIKE_CLASSES = {"stairs", "escalator"}
 STAIR_SUPPORT_CLASSES = {"handrail", "railing"}
 GLASS_STRUCTURE_CLASSES = {"glass_door", "glass_window"}
 GLASS_SURFACE_BASE_CLASSES = {"door", "window"}
+ELEVATOR_CLASSES = {"elevator", "lift"}
 TURNSTILE_CLASSES = {"turnstile", "ticket gate", "fare gate"}
 TURNSTILE_SUPPORT_CLASSES = {"ticket machine", "barrier", "stanchion"}
 VERTICAL_STATIC_CLASSES = {
@@ -599,6 +600,11 @@ class SemanticOutputEngine:
         self.far_static_risk_max = float(os.getenv("AIGLASS_FAR_STATIC_RISK_MAX", "0.52"))
         self.glass_pair_max_dist_norm = float(os.getenv("AIGLASS_GLASS_PAIR_MAX_DIST_NORM", "0.24"))
         self.glass_switch_max_dist_norm = float(os.getenv("AIGLASS_GLASS_SWITCH_MAX_DIST_NORM", "0.32"))
+        self.elevator_min_conf = float(os.getenv("AIGLASS_ELEVATOR_MIN_CONF", "0.78"))
+        self.elevator_min_area_ratio = float(os.getenv("AIGLASS_ELEVATOR_MIN_AREA_RATIO", "0.10"))
+        self.elevator_conf_with_support = float(os.getenv("AIGLASS_ELEVATOR_CONF_WITH_SUPPORT", "0.55"))
+        self.elevator_support_min_score = float(os.getenv("AIGLASS_ELEVATOR_SUPPORT_MIN_SCORE", "1.0"))
+        self.elevator_support_max_dist_norm = float(os.getenv("AIGLASS_ELEVATOR_SUPPORT_MAX_DIST_NORM", "0.34"))
         self.parked_block_distance_m = float(os.getenv("AIGLASS_PARKED_BLOCK_DISTANCE_M", "3.8"))
         self.parked_block_area_min = float(os.getenv("AIGLASS_PARKED_BLOCK_AREA_MIN", "0.035"))
         self.parked_speed_max = float(os.getenv("AIGLASS_PARKED_SPEED_MAX", "0.10"))
@@ -1866,6 +1872,80 @@ class SemanticOutputEngine:
                 dedup[k] = it
         return list(dedup.values())
 
+    def _elevator_support_weight(self, item: Dict[str, Any]) -> float:
+        name_lc = self._normalize_object_name(str(item.get("name", "")))
+        raw_lc = str(item.get("raw_name", item.get("name", ""))).strip().lower().replace("-", " ").replace("_", " ")
+        merged = f"{name_lc} {raw_lc}"
+        strong_tokens = (
+            "elevator button",
+            "floor button",
+            "button panel",
+            "control panel",
+            "elevator panel",
+            "elevator indicator",
+            "floor indicator",
+            "lift door",
+            "elevator door",
+        )
+        if any(tok in merged for tok in strong_tokens):
+            return 1.0
+        if name_lc in {"button", "panel", "indicator"}:
+            return 0.75
+        if name_lc in {"door", "door_handle", "light_switch"}:
+            return 0.4
+        return 0.0
+
+    def _suppress_weak_elevator_candidates(
+        self,
+        prepared: List[Dict[str, Any]],
+        frame_w: int,
+        frame_h: int,
+    ) -> List[Dict[str, Any]]:
+        prepared = list(prepared or [])
+        if not prepared:
+            return prepared
+
+        elevator_entries: List[Tuple[int, Dict[str, Any]]] = []
+        support_entries: List[Tuple[Dict[str, Any], float]] = []
+        for idx, item in enumerate(prepared):
+            name_lc = self._normalize_object_name(str(item.get("name", "")))
+            if name_lc in ELEVATOR_CLASSES:
+                elevator_entries.append((idx, item))
+                continue
+            weight = self._elevator_support_weight(item)
+            if weight > 0.0:
+                support_entries.append((item, weight))
+
+        if not elevator_entries:
+            return prepared
+
+        keep_indices: Set[int] = set()
+        multi_elevator = len(elevator_entries) >= 2
+        for idx, elev in elevator_entries:
+            conf_f = float(elev.get("conf", 0.0) or 0.0)
+            area_ratio = float(elev.get("area_ratio", 0.0) or 0.0)
+            support_score = 0.0
+            for support_item, weight in support_entries:
+                if self._pair_distance_norm(elev, support_item, frame_w, frame_h) <= self.elevator_support_max_dist_norm:
+                    support_score += float(weight)
+
+            strong_single = conf_f >= self.elevator_min_conf and area_ratio >= self.elevator_min_area_ratio
+            supported_single = conf_f >= self.elevator_conf_with_support and support_score >= 0.5
+            strong_support = support_score >= self.elevator_support_min_score
+            if (multi_elevator and conf_f >= self.conf_threshold) or strong_single or supported_single or strong_support:
+                keep_indices.add(idx)
+
+        if len(keep_indices) >= len(elevator_entries):
+            return prepared
+
+        filtered: List[Dict[str, Any]] = []
+        for idx, item in enumerate(prepared):
+            name_lc = self._normalize_object_name(str(item.get("name", "")))
+            if name_lc in ELEVATOR_CLASSES and idx not in keep_indices:
+                continue
+            filtered.append(item)
+        return filtered
+
     def _is_static_poster_like_person(
         self,
         *,
@@ -2116,6 +2196,7 @@ class SemanticOutputEngine:
         glass_inferred = self._infer_glass_structure_candidates(prepared, frame_w, frame_h)
         if glass_inferred:
             prepared.extend(glass_inferred)
+        prepared = self._suppress_weak_elevator_candidates(prepared, frame_w, frame_h)
 
         names = [str(o.get("name", "")).strip().lower() for o in prepared]
         scene, scene_confidence = self.infer_scene_with_confidence(names, mean_luma=mean_luma)

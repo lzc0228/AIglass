@@ -527,3 +527,37 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed.
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_*.py' -v` passed (regression).
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_avoidance_trigger_policy.py tests/test_semantic_far_obstacle_policy.py` passed.
+
+## 2026-02-27 01:58 +0800 - Task #20 completed
+- Selected next pending task by AGENT order: `#20 Suppress elevator hallucination announcements`.
+- Environment/startup check with virtual env + direct run completed:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python app_main.py`
+  - Runtime log created: `log/app_main-20260227_015638.log`.
+  - Startup entered normal path; observed existing environment blockers/warnings:
+    - missing SDK dependency warning: `No module named 'dashscope'`
+    - CUDA mismatch on RTX 5090 (`sm_120`) with current torch build, causing `no kernel image is available for execution on the device` during model warmup.
+- Minimal unblock steps recorded:
+  - `pip install dashscope openai`
+  - temporary CPU fallback `AIGLASS_DEVICE=cpu` (or install torch/ultralytics build compatible with `sm_120`).
+- Root-cause evidence:
+  - In mixed non-elevator scene probe, a single weak `elevator` candidate still produced elevator narration and output (`names=['elevator', 'table', 'chair']`), i.e. hallucination leak.
+- Implemented task scope (`semantic_output.py`):
+  - Added elevator evidence gate with configurable thresholds:
+    - `AIGLASS_ELEVATOR_MIN_CONF`
+    - `AIGLASS_ELEVATOR_MIN_AREA_RATIO`
+    - `AIGLASS_ELEVATOR_CONF_WITH_SUPPORT`
+    - `AIGLASS_ELEVATOR_SUPPORT_MIN_SCORE`
+    - `AIGLASS_ELEVATOR_SUPPORT_MAX_DIST_NORM`
+  - Added support scoring for elevator context objects (button/panel/indicator/door-related).
+  - Added `_suppress_weak_elevator_candidates(...)` and integrated it before scene inference:
+    - suppress isolated weak elevator detections in non-elevator context.
+    - retain elevator cue when support evidence is sufficient.
+- Added tests:
+  - `tests/test_semantic_elevator_hallucination.py`
+    - non-elevator mixed scene suppresses weak elevator cue.
+    - strong elevator + support evidence keeps elevator cue.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_elevator_hallucination.py' -v` passed (after initial red failure).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_*.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_text_reader_*.py' -v` passed (cross-module regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py tests/test_semantic_elevator_hallucination.py` passed.

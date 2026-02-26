@@ -304,8 +304,8 @@
         "Non-elevator replay no longer emits elevator hallucination."
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 21,
