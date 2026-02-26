@@ -1,0 +1,328 @@
+{
+  "project": "IROS",
+  "source": "TODO (2).md",
+  "task_count": 21,
+  "updated_at": "2026-02-26",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Stabilize bone-conduction output routing",
+      "source_line": 1,
+      "description": "Ensure audio is reliably routed to bone-conduction output and avoid fallback to hardware speaker unless explicitly configured.",
+      "acceptance": [
+        "When bluetooth is connected, output prefers bluetooth route.",
+        "No unintended speaker leak in normal connected case."
+      ],
+      "verification": [
+        "Runtime route logs show bluetooth-selected path when connected."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 2,
+      "title": "Reduce poster-to-person false positives",
+      "source_line": 2,
+      "description": "Reduce cases where poster images of people are announced as real nearby persons.",
+      "acceptance": [
+        "Static poster faces are less likely to trigger person-avoidance alerts."
+      ],
+      "verification": [
+        "Replay/frame test with poster scene shows suppressed or downgraded person alert."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 3,
+      "title": "Improve stair/step detection reliability",
+      "source_line": 3,
+      "description": "Increase detection robustness for up/down stairs and step edges.",
+      "acceptance": [
+        "Stair-related cues appear consistently in staircase scenes."
+      ],
+      "verification": [
+        "Stair scene replay shows stable stair guidance."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 4,
+      "title": "Add glass door/window handle and switch localization",
+      "source_line": 4,
+      "description": "Support guidance for glass doors/windows with handles and nearby light switches.",
+      "acceptance": [
+        "Glass structure cues are announced with direction when visible."
+      ],
+      "verification": [
+        "Sample frames produce glass/handle/switch guidance text."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 5,
+      "title": "Add stair handrail guidance",
+      "source_line": 5,
+      "description": "Provide handrail position guidance while approaching or using stairs.",
+      "acceptance": [
+        "Handrail direction is announced in stair context."
+      ],
+      "verification": [
+        "Stair + handrail frames produce handrail guidance."
+      ],
+      "dependencies": [3],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 6,
+      "title": "Improve indoor potted-plant obstacle detection",
+      "source_line": 6,
+      "description": "Improve potted-plant detection for indoor obstacle awareness.",
+      "acceptance": [
+        "Potted plants in indoor path are detected and announced when relevant."
+      ],
+      "verification": [
+        "Indoor plant test frames show potted-plant detection."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 7,
+      "title": "Recognize restroom signs/text and entry/exit direction",
+      "source_line": 7,
+      "description": "Support restroom-related sign/text recognition and directional entry/exit cues.",
+      "acceptance": [
+        "Restroom sign/text can be recognized when readable.",
+        "Entry/exit directional cue is generated."
+      ],
+      "verification": [
+        "OCR-driven test emits restroom/entry/exit message."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 8,
+      "title": "Improve turnstile recognition after passing gate",
+      "source_line": 8,
+      "description": "Retain or recover turnstile awareness after passing through gate area.",
+      "acceptance": [
+        "Turnstile context is still recognized post-passage in valid scenes."
+      ],
+      "verification": [
+        "Gate transition frames keep turnstile-related scene cues."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 9,
+      "title": "Improve blind path detection accuracy",
+      "source_line": 9,
+      "description": "Improve blind path detection stability and reduce misses.",
+      "acceptance": [
+        "Blind path tracking is more stable in typical walkway scenes."
+      ],
+      "verification": [
+        "Blind path replay shows improved continuity."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 10,
+      "title": "Distance broadcast without decimals, prefer steps",
+      "source_line": 10,
+      "description": "Use integer distance wording and prioritize step-based distance narration.",
+      "acceptance": [
+        "Distance speech avoids decimal meters in default mode.",
+        "Step-based expression is used by default."
+      ],
+      "verification": [
+        "Generated speech text uses integer steps/meters only."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 11,
+      "title": "Far obstacle policy: remind only, no avoidance action",
+      "source_line": 11,
+      "description": "For far static objects, provide reminder/safety cue without avoid-left/right command.",
+      "acceptance": [
+        "Far static obstacles do not trigger directional avoidance instructions."
+      ],
+      "verification": [
+        "Speech generation differentiates far reminders vs near avoidance."
+      ],
+      "dependencies": [10],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 12,
+      "title": "Improve poles/hydrants/bollards/trees/sign-post detection",
+      "source_line": 12,
+      "description": "Improve recognition for common roadside vertical/static obstacles.",
+      "acceptance": [
+        "Target obstacle classes are detected with better recall."
+      ],
+      "verification": [
+        "Whitelist + scene tests show detections for listed classes."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 13,
+      "title": "Fix wrong-side avoidance around parked vehicles",
+      "source_line": 13,
+      "description": "Avoid advising blocked side passage when parked vehicles block pedestrian path.",
+      "acceptance": [
+        "Routing advice does not suggest blocked side in representative scenarios."
+      ],
+      "verification": [
+        "Crosswalk/navigation decision tests prefer feasible side."
+      ],
+      "dependencies": [11],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 14,
+      "title": "Improve trash-bin/bicycle/e-bike/motorcycle obstacle detection",
+      "source_line": 14,
+      "description": "Improve detection quality for these commonly missed roadside obstacles.",
+      "acceptance": [
+        "Target class announcements occur reliably when visible and relevant."
+      ],
+      "verification": [
+        "Replay tests show improved detections for listed categories."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 15,
+      "title": "Improve low-fence detection",
+      "source_line": 15,
+      "description": "Improve recall for low-height fences/barriers that were previously missed.",
+      "acceptance": [
+        "Low fences are detected and announced as obstacles when near path."
+      ],
+      "verification": [
+        "Low-fence sample frames trigger fence obstacle output."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 16,
+      "title": "Add stop-and-gaze (>=2s) focused description mode",
+      "source_line": 16,
+      "description": "When user stops and faces one direction for >=2s, prioritize richer forward scene description.",
+      "acceptance": [
+        "Sustained stop-and-gaze state triggers focused description mode."
+      ],
+      "verification": [
+        "IMU/time-gated runtime test emits focused mode narration."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 17,
+      "title": "Recognize subway/bus station signs and text",
+      "source_line": 17,
+      "description": "Improve detection and OCR-based recognition for subway/bus station signage.",
+      "acceptance": [
+        "Station sign/text cues are recognized when legible."
+      ],
+      "verification": [
+        "Station-related scenes produce correct station cues."
+      ],
+      "dependencies": [7],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 18,
+      "title": "Improve core model outputs for traffic/crosswalk/blindpath/person/stairs/turnstile",
+      "source_line": 18,
+      "description": "Improve end-to-end detection behavior for high-priority navigation entities.",
+      "acceptance": [
+        "Core entities show fewer misses and better stability in replay scenes."
+      ],
+      "verification": [
+        "Regression replay indicates improved detection consistency."
+      ],
+      "dependencies": [3, 8, 9],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 19,
+      "title": "Avoidance trigger only for straight-ahead urgent/moving threats",
+      "source_line": 19,
+      "description": "Restrict active avoidance to forward critical threats or approaching objects.",
+      "acceptance": [
+        "Avoidance commands are emitted only under configured critical conditions."
+      ],
+      "verification": [
+        "Risk/urgency policy tests confirm trigger narrowing."
+      ],
+      "dependencies": [11, 13],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 20,
+      "title": "Suppress elevator hallucination announcements",
+      "source_line": 20,
+      "description": "Reduce false elevator announcements in non-elevator scenes.",
+      "acceptance": [
+        "Elevator cues are suppressed unless scene evidence is sufficient."
+      ],
+      "verification": [
+        "Non-elevator replay no longer emits elevator hallucination."
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false
+    },
+    {
+      "id": 21,
+      "title": "Persist app_main output logs to local file in realtime",
+      "source_line": 21,
+      "description": "Write app_main stdout/stderr to timestamped local files while preserving terminal output.",
+      "acceptance": [
+        "App startup creates a timestamped log file under log directory.",
+        "Terminal output remains visible while file receives same output in realtime."
+      ],
+      "verification": [
+        "python -m py_compile app_main.py",
+        "Short runtime start creates and appends log/app_main-*.log"
+      ],
+      "dependencies": [],
+      "status": "done",
+      "passes": true
+    }
+  ]
+}

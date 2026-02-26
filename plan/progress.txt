@@ -1,0 +1,17 @@
+# Progress Log
+
+## 2026-02-26 23:45 +0800 - Session bootstrap
+- Created persistent workflow files under `plan/`.
+- Mapped `TODO (2).md` into 21 trackable tasks in `plan/task.json`.
+- Set task `#21` to `in_progress` as first executable milestone.
+- Next: implement realtime local log persistence in `app_main.py`, verify, then commit.
+
+## 2026-02-26 23:50 +0800 - Task #21 completed
+- Implemented realtime local log persistence in `app_main.py` using stdout/stderr tee.
+- Added startup-time log initialization before heavy module imports.
+- Added shutdown cleanup to restore original streams and close log handle.
+- Verification:
+  - `python -m py_compile app_main.py` passed.
+  - Short run (`timeout 20s python app_main.py`) created:
+    - `log/app_main-20260226_234931.log`
+  - Runtime exited due local environment missing `cv2`, but traceback was persisted in the log file, proving realtime logging works from process start.

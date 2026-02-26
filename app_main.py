@@ -1,6 +1,7 @@
 # app_main.py
 # -*- coding: utf-8 -*-
 import os, sys, time, json, asyncio, base64, audioop, socket
+from datetime import datetime
 # ---- Ultralytics 配置目录（避免在受限环境写 ~/.config）----
 _REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 os.environ.setdefault("YOLO_CONFIG_DIR", os.path.join(_REPO_DIR, ".ultralytics"))
@@ -12,9 +13,126 @@ from typing import Any, Dict, Optional, Tuple, List, Callable, Set, Deque
 from collections import deque
 from dataclasses import dataclass
 import re
+# ---- Windows 事件循环策略 ----
+if sys.platform.startswith("win"):
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
+
+# ---- .env ----
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+# ---- realtime file logging (stdout/stderr tee) ----
+_REALTIME_LOG_INITIALIZED = False
+_REALTIME_LOG_HANDLE = None
+_REALTIME_LOG_PATH = ""
+_REALTIME_STDOUT_ORIG = sys.stdout
+_REALTIME_STDERR_ORIG = sys.stderr
+
+
+class _TeeStream:
+    def __init__(self, *targets):
+        self._targets = [t for t in targets if t is not None]
+
+    def write(self, data):
+        text = data if isinstance(data, str) else str(data)
+        for target in self._targets:
+            try:
+                target.write(text)
+            except Exception:
+                pass
+        return len(text)
+
+    def flush(self):
+        for target in self._targets:
+            try:
+                target.flush()
+            except Exception:
+                pass
+
+    def isatty(self):
+        for target in self._targets:
+            try:
+                if target.isatty():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def __getattr__(self, name):
+        if self._targets:
+            return getattr(self._targets[0], name)
+        raise AttributeError(name)
+
+
+def _init_realtime_file_logging():
+    global _REALTIME_LOG_INITIALIZED, _REALTIME_LOG_HANDLE, _REALTIME_LOG_PATH
+    if _REALTIME_LOG_INITIALIZED:
+        return _REALTIME_LOG_PATH
+    _REALTIME_LOG_INITIALIZED = True
+
+    enabled_raw = str(os.getenv("AIGLASS_FILE_LOG", "1")).strip().lower()
+    if enabled_raw in ("0", "false", "no", "off"):
+        return ""
+
+    log_dir = os.getenv("AIGLASS_FILE_LOG_DIR", os.path.join(_REPO_DIR, "log"))
+    log_prefix = os.getenv("AIGLASS_FILE_LOG_PREFIX", "app_main").strip() or "app_main"
+
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(log_dir, f"{log_prefix}-{ts}.log")
+        handle = open(path, "a", encoding="utf-8", buffering=1)
+
+        _REALTIME_LOG_HANDLE = handle
+        _REALTIME_LOG_PATH = path
+        sys.stdout = _TeeStream(_REALTIME_STDOUT_ORIG, handle)
+        sys.stderr = _TeeStream(_REALTIME_STDERR_ORIG, handle)
+        print(f"[LOG] Realtime file logging enabled: {path}")
+        return path
+    except Exception as e:
+        try:
+            _REALTIME_STDERR_ORIG.write(f"[LOG] Realtime file logging init failed: {e}\n")
+            _REALTIME_STDERR_ORIG.flush()
+        except Exception:
+            pass
+        return ""
+
+
+def _close_realtime_file_logging():
+    global _REALTIME_LOG_HANDLE
+    handle = _REALTIME_LOG_HANDLE
+    _REALTIME_LOG_HANDLE = None
+
+    # restore original console streams first
+    sys.stdout = _REALTIME_STDOUT_ORIG
+    sys.stderr = _REALTIME_STDERR_ORIG
+
+    if handle is None:
+        return
+    try:
+        handle.flush()
+    except Exception:
+        pass
+    try:
+        handle.close()
+    except Exception:
+        pass
+
+
+try:
+    _init_realtime_file_logging()
+except Exception:
+    pass
+
 # 在其它 import 之后加：
 from qwen_extractor import extract_english_label
-from navigation_master import NavigationMaster, OrchestratorResult 
+from navigation_master import NavigationMaster, OrchestratorResult
 # 新增：导入盲道导航器
 from workflow_blindpath import BlindPathNavigator
 # 新增：导入过马路导航器
@@ -29,27 +147,10 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 from obstacle_detector_client import ObstacleDetectorClient
-
-import torch  # 添加这行
-
-
 import mediapipe as mp
 import bridge_io
 import threading
 import yolomedia  # 确保和 app_main.py 同目录，文件名就是 yolomedia.py
-# ---- Windows 事件循环策略 ----
-if sys.platform.startswith("win"):
-    try:
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    except Exception:
-        pass
-
-# ---- .env ----
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except Exception:
-    pass
 
 # ---- DashScope ASR 基础（可关闭） ----
 try:
@@ -3063,6 +3164,7 @@ async def on_shutdown():
     #     pass
 
     print("[SHUTDOWN] 资源清理完成")
+    _close_realtime_file_logging()
 
 # app_main.py —— 在文件里已有的 @app.on_event("startup") 之后，再加一个新的 startup 钩子
 
