@@ -160,11 +160,11 @@ def _force_audio_log(event: str, **fields):
     print("[AUDIO-FORCE] " + " ".join(parts))
 
 
-def _init_local_audio_if_needed() -> bool:
+def _init_local_audio_if_needed(force: bool = False) -> bool:
     """延迟初始化本地扬声器输出（pyaudio）。"""
     global _local_audio, _local_audio_stream, _local_audio_backend, _local_audio_failed
 
-    if not _local_fallback_enabled:
+    if (not force) and (not _local_fallback_enabled):
         return False
 
     with _local_audio_lock:
@@ -193,10 +193,10 @@ def _init_local_audio_if_needed() -> bool:
             return False
 
 
-def _play_pcm_local_fallback(pcm_data: bytes) -> bool:
+def _play_pcm_local_fallback(pcm_data: bytes, force: bool = False) -> bool:
     if not pcm_data:
         return False
-    if not _init_local_audio_if_needed():
+    if not _init_local_audio_if_needed(force=force):
         return False
 
     try:
@@ -208,6 +208,61 @@ def _play_pcm_local_fallback(pcm_data: bytes) -> bool:
     except Exception as e:
         print(f"[AUDIO] 本地扬声器兜底播放失败: {e}")
         return False
+
+
+def _refresh_output_mode_from_bluetooth() -> bool:
+    """
+    根据蓝牙连接状态刷新输出模式。
+    返回值表示当前是否检测到蓝牙音频可用。
+    """
+    global _output_mode
+
+    auto_switch = os.getenv("AIGLASS_AUDIO_AUTO_SWITCH", "1") == "1"
+    if not auto_switch or not _bluetooth_manager:
+        return False
+
+    try:
+        is_bluetooth_connected = bool(_bluetooth_manager.check_connection())
+    except Exception as e:
+        print(f"[AUDIO] 蓝牙状态检测失败: {e}")
+        return False
+
+    if is_bluetooth_connected:
+        if _output_mode != "bluetooth":
+            _output_mode = "bluetooth"
+            print("[AUDIO] 检测到蓝牙已连接，切换音频输出到蓝牙")
+        return True
+
+    if _output_mode == "bluetooth":
+        configured_mode = os.getenv("AIGLASS_AUDIO_OUTPUT", "local").strip().lower() or "local"
+        fallback_mode = configured_mode if configured_mode in ("local", "esp32") else "local"
+        _output_mode = fallback_mode
+        print(f"[AUDIO] 蓝牙未连接，回退音频输出模式到 {fallback_mode}")
+    return False
+
+
+def _resolve_output_route_policy(
+    *,
+    output_mode: str,
+    stream_client_count: int,
+    loop_ready: bool,
+    bluetooth_connected: bool,
+    speaker_fallback_enabled: bool,
+) -> str:
+    """
+    统一输出路由策略:
+    - 蓝牙连接且当前模式为 bluetooth：优先本地输出（由系统蓝牙 sink 承接）
+    - 否则优先 stream
+    - stream 不可用时，仅在显式允许时才使用本地扬声器兜底
+    """
+    mode = str(output_mode or "local").strip().lower()
+    if mode == "bluetooth" and bluetooth_connected:
+        return "bluetooth_local_preferred"
+    if stream_client_count > 0 and loop_ready:
+        return "stream"
+    if speaker_fallback_enabled:
+        return "speaker_local_fallback"
+    return "no_route"
 
 
 def _snapshot_output_state() -> dict:
@@ -248,27 +303,37 @@ def run_startup_audio_selfcheck(play_probe: bool = True, probe_text: str = "音�
         initialize_audio_system()
 
     state = _snapshot_output_state()
-    route = "unavailable"
+    bluetooth_connected = _refresh_output_mode_from_bluetooth()
+    route_policy = _resolve_output_route_policy(
+        output_mode=_output_mode,
+        stream_client_count=int(state.get("stream_clients", 0) or 0),
+        loop_ready=bool(state.get("server_loop_running", False)),
+        bluetooth_connected=bluetooth_connected,
+        speaker_fallback_enabled=bool(state.get("local_fallback_enabled", False)),
+    )
+    route = "no_route"
 
-    if state.get("stream_clients", 0) > 0 and state.get("server_loop_running", False):
+    if route_policy == "stream":
         route = "stream"
-    elif state.get("local_fallback_enabled", False):
-        # 尝试初始化本地设备，以便给出明确自检结论
+    elif route_policy == "bluetooth_local_preferred":
+        ready = _init_local_audio_if_needed(force=True)
+        state["local_audio_ready"] = bool(ready)
+        route = "bluetooth_local" if ready else "bluetooth_local_unavailable"
+    elif route_policy == "speaker_local_fallback":
         ready = _init_local_audio_if_needed()
         state["local_audio_ready"] = bool(ready)
-        if ready:
-            route = "local_fallback"
-        else:
-            route = "local_fallback_unavailable"
+        route = "local_fallback" if ready else "local_fallback_unavailable"
 
     state["preferred_route"] = route
+    state["route_policy"] = route_policy
+    state["bluetooth_connected"] = bluetooth_connected
 
     probe_pcm = _get_pcm_for_text(probe_text, allow_tts=True, save_generated=True)
     state["probe_source"] = _last_audio_resolve_source
     state["probe_bytes"] = len(probe_pcm) if probe_pcm else 0
 
     played = False
-    if play_probe and probe_pcm and route in ("stream", "local_fallback"):
+    if play_probe and probe_pcm and route in ("stream", "local_fallback", "bluetooth_local"):
         _enqueue_pcm_threadsafe(probe_pcm)
         played = True
 
@@ -298,7 +363,7 @@ def _init_audio_output():
     # 读取输出模式配置
     _output_mode = os.getenv("AIGLASS_AUDIO_OUTPUT", "local")
     auto_switch = os.getenv("AIGLASS_AUDIO_AUTO_SWITCH", "1") == "1"
-    _local_fallback_enabled = os.getenv("AIGLASS_LOCAL_FALLBACK_PLAYBACK", "1") == "1"
+    _local_fallback_enabled = os.getenv("AIGLASS_LOCAL_FALLBACK_PLAYBACK", "0") == "1"
     _force_audio_log(
         "audio_init",
         output_mode=_output_mode,
@@ -1152,14 +1217,28 @@ def _broadcast_audio_optimized_sync(pcm_data: bytes):
             srv_loop = None
             stream_client_count = 0
 
-        local_fallback_used = False
+        loop_ready = bool(srv_loop is not None and (not hasattr(srv_loop, "is_running") or srv_loop.is_running()))
+        bluetooth_connected = _refresh_output_mode_from_bluetooth()
+        route_policy = _resolve_output_route_policy(
+            output_mode=_output_mode,
+            stream_client_count=stream_client_count,
+            loop_ready=loop_ready,
+            bluetooth_connected=bluetooth_connected,
+            speaker_fallback_enabled=_local_fallback_enabled,
+        )
 
-        if stream_client_count <= 0 and _local_fallback_enabled:
-            local_fallback_used = _play_pcm_local_fallback(full_audio)
+        if route_policy in ("bluetooth_local_preferred", "speaker_local_fallback"):
+            local_fallback_used = _play_pcm_local_fallback(
+                full_audio,
+                force=(route_policy == "bluetooth_local_preferred"),
+            )
+            mode_ok = "bluetooth_local_preferred" if route_policy == "bluetooth_local_preferred" else "local_fallback"
+            mode_fail = "bluetooth_local_failed" if route_policy == "bluetooth_local_preferred" else "local_fallback_failed"
             _force_audio_log(
                 "output_dispatch",
-                mode="local_fallback" if local_fallback_used else "local_fallback_failed",
+                mode=mode_ok if local_fallback_used else mode_fail,
                 stream_clients=stream_client_count,
+                output_mode=_output_mode,
                 bytes=len(full_audio),
             )
             if local_fallback_used:
@@ -1167,20 +1246,27 @@ def _broadcast_audio_optimized_sync(pcm_data: bytes):
                 _last_play_ts = time.monotonic()
                 _maybe_report_audio_metrics()
                 return
+            if route_policy == "speaker_local_fallback":
+                return
 
-        if srv_loop is None or (hasattr(srv_loop, "is_running") and not srv_loop.is_running()):
-            if _local_fallback_enabled:
-                local_fallback_used = _play_pcm_local_fallback(full_audio)
-                _force_audio_log(
-                    "output_dispatch",
-                    mode="loop_missing_local" if local_fallback_used else "loop_missing_fail",
-                    stream_clients=stream_client_count,
-                    bytes=len(full_audio),
-                )
-                if local_fallback_used:
-                    _bump_audio_metric("played", 1)
-                    _last_play_ts = time.monotonic()
-                    _maybe_report_audio_metrics()
+        if route_policy == "no_route":
+            _force_audio_log(
+                "output_dispatch",
+                mode="no_route",
+                stream_clients=stream_client_count,
+                output_mode=_output_mode,
+                bytes=len(full_audio),
+            )
+            return
+
+        if not loop_ready:
+            _force_audio_log(
+                "output_dispatch",
+                mode="loop_missing_no_route",
+                stream_clients=stream_client_count,
+                output_mode=_output_mode,
+                bytes=len(full_audio),
+            )
             return
 
         fut = asyncio.run_coroutine_threadsafe(broadcast_pcm16_realtime(full_audio), srv_loop)
@@ -1298,19 +1384,8 @@ def play_audio_threadsafe(audio_key):
             print(f"[AUDIO] 解压失败: {audio_key}")
             return
 
-    # 【新增】动态蓝牙检测：如果启用自动切换，每次播放前检查蓝牙状态
-    auto_switch = os.getenv("AIGLASS_AUDIO_AUTO_SWITCH", "1") == "1"
-    if auto_switch and _bluetooth_manager:
-        # 检查当前蓝牙连接状态
-        is_bluetooth_connected = _bluetooth_manager.check_connection()
-        if is_bluetooth_connected:
-            if _output_mode != "bluetooth":
-                _output_mode = "bluetooth"
-                print(f"[AUDIO] 检测到蓝牙已连接，切换音频输出到蓝牙")
-        else:
-            if _output_mode == "bluetooth":
-                _output_mode = "local"
-                print(f"[AUDIO] 蓝牙未连接，切换音频输出到本地扬声器")
+    # 播放前刷新一次蓝牙输出状态，确保与 play_voice_text 等路径一致
+    _refresh_output_mode_from_bluetooth()
 
     _enqueue_pcm_threadsafe(pcm_data)
 

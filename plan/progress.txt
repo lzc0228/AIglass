@@ -15,3 +15,24 @@
   - Short run (`timeout 20s python app_main.py`) created:
     - `log/app_main-20260226_234931.log`
   - Runtime exited due local environment missing `cv2`, but traceback was persisted in the log file, proving realtime logging works from process start.
+
+## 2026-02-27 00:06 +0800 - Task #1 completed
+- Activated virtual env `openai_glasses` and re-ran startup check with direct `python app_main.py`.
+- Environment/startup blockers observed:
+  - Missing SDK deps in env: `dashscope`, `openai` (warning only in current startup path).
+  - CUDA compatibility issue on RTX 5090 (`no kernel image is available for execution on the device`) for current torch build.
+- Minimal unblock steps recorded:
+  - `pip install dashscope openai`
+  - Use CPU path for now (`AIGLASS_DEVICE=cpu`) or install PyTorch/Ultralytics build compatible with `sm_120`.
+- Implemented task scope (`audio_player.py`):
+  - Added deterministic route policy function to prefer bluetooth when connected.
+  - Added runtime bluetooth mode refresh for all playback paths.
+  - Changed default `AIGLASS_LOCAL_FALLBACK_PLAYBACK` to `0` (speaker fallback now explicit opt-in).
+  - Added route logs showing bluetooth-selected dispatch mode.
+- Added tests:
+  - `tests/test_audio_routing_policy.py` (TDD red->green) for routing policy.
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_audio_routing_policy.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile audio_player.py` passed.
+  - Runtime route probe emitted:
+    - `[AUDIO-FORCE] event=output_dispatch mode=bluetooth_local_preferred ... output_mode=bluetooth`

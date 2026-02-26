@@ -2,7 +2,7 @@
   "project": "IROS",
   "source": "TODO (2).md",
   "task_count": 21,
-  "updated_at": "2026-02-26",
+  "updated_at": "2026-02-27",
   "tasks": [
     {
       "id": 1,
@@ -17,8 +17,8 @@
         "Runtime route logs show bluetooth-selected path when connected."
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false
+      "status": "done",
+      "passes": true
     },
     {
       "id": 2,
