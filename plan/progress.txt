@@ -36,3 +36,31 @@
   - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile audio_player.py` passed.
   - Runtime route probe emitted:
     - `[AUDIO-FORCE] event=output_dispatch mode=bluetooth_local_preferred ... output_mode=bluetooth`
+
+## 2026-02-27 00:18 +0800 - Task #2 completed
+- Selected next pending task by AGENT order: `#2 Reduce poster-to-person false positives`.
+- Environment/startup check (venv `openai_glasses`) and direct run completed:
+  - `python app_main.py` creates runtime log and enters startup path.
+  - Existing blockers unchanged: missing `dashscope`, and CUDA incompatibility (`sm_120` vs current torch build) causing model warmup failures.
+- Root-cause evidence:
+  - `semantic_output._avoidance()` previously returned avoidance instructions even for static `person` with no approach signal.
+  - Probe before fix produced: `action=稍微向右侧避让。 urgency=LOW` for static person-like input.
+- Implemented task scope (`semantic_output.py`):
+  - Added poster-like static person filter with conservative gates:
+    - class `person`
+    - non-approaching, very low speed/area change
+    - high unsupported/upper-frame posture
+    - only when distance >= configurable safe minimum
+  - For matched case, downgrade to non-avoidance action (`疑似海报人像...`) and `LOW` urgency.
+  - Kept near/approaching person behavior unchanged for safety.
+- Added tests:
+  - `tests/test_semantic_poster_person_filter.py`
+    - static poster-like person -> no avoid/绕开/停 action
+    - approaching person -> keep avoidance
+    - near static person -> still safety action
+- Verification:
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_semantic_poster_person_filter.py' -v` passed.
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m unittest discover -s tests -p 'test_audio_routing_policy.py' -v` passed (regression).
+  - `source /root/miniconda3/etc/profile.d/conda.sh && conda activate openai_glasses && python -m py_compile semantic_output.py` passed.
+  - Poster-like frame probe now outputs downgraded action:
+    - `action=疑似海报人像，先保持直行并持续观察`
