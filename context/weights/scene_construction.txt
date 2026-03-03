@@ -1,0 +1,48 @@
+# 施工区域场景权重
+# 关注：危险设施、警告标识、障碍物
+
+# 危险设施（最高优先级）
+cone 1.8
+traffic cone 1.8
+barrier 1.8
+fence 1.7
+construction barrier 1.7
+warning sign 1.6
+danger sign 1.6
+safety vest 1.5
+
+# 工具和材料
+excavator 1.5
+crane 1.5
+bulldozer 1.5
+cement mixer 1.4
+scaffold 1.5
+ladder 1.5
+tool 1.3
+
+# 人员
+worker 1.4
+construction worker 1.4
+engineer 1.4
+
+# 临时设施
+temporary fence 1.6
+tape 1.5
+detour sign 1.5
+road work sign 1.5
+
+# 危险区域
+hole 1.8
+trench 1.8
+debris 1.6
+rubble 1.6
+loose material 1.5
+
+# 导航
+sign 1.3
+arrow sign 1.3
+
+# 交通
+car 1.0
+truck 1.0
+construction vehicle 1.2

@@ -1,0 +1,7 @@
+# 十字路口场景权重
+traffic light 1.5
+crosswalk 1.4
+car 1.2
+bus 1.2
+truck 1.2
+bicycle 1.1

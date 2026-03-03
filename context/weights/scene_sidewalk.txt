@@ -1,0 +1,7 @@
+# 人行道场景权重
+person 1.2
+bench 1.1
+pole 1.1
+hydrant 1.1
+bicycle 1.0
+scooter 1.0

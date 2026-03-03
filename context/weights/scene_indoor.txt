@@ -1,0 +1,15 @@
+# 室内场景权重（SceneWeight: indoor）
+
+person 1.0
+chair 1.2
+bench 1.1
+potted plant 1.0
+box 1.0
+cone 0.8
+
+car 0.6
+bus 0.6
+truck 0.6
+bicycle 0.7
+motorcycle 0.7
+scooter 0.7

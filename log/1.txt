@@ -1,0 +1,2309 @@
+nano0@ubuntu:~$ source aiglass/bin/activate
+(aiglass) nano0@ubuntu:~$ cd Codes/AIglass-dev
+(aiglass) nano0@ubuntu:~/Codes/AIglass-dev$ pip install git+https://github.com/ultralytics/CLIP.git
+Looking in indexes: https://pypi.tuna.tsinghua.edu.cn/simple
+Collecting git+https://github.com/ultralytics/CLIP.git
+  Cloning https://github.com/ultralytics/CLIP.git to /tmp/pip-req-build-9aumbpxx
+  Running command git clone --filter=blob:none --quiet https://github.com/ultralytics/CLIP.git /tmp/pip-req-build-9aumbpxx
+  Resolved https://github.com/ultralytics/CLIP.git to commit 88ade288431a46233f1556d1e141901b3ef0a36b
+  Installing build dependencies ... done
+  Getting requirements to build wheel ... done
+  Preparing metadata (pyproject.toml) ... done
+Requirement already satisfied: torch in /home/nano0/aiglass/lib/python3.10/site-packages (from clip==1.0) (2.10.0)
+Requirement already satisfied: tqdm in /home/nano0/aiglass/lib/python3.10/site-packages (from clip==1.0) (4.67.3)
+Requirement already satisfied: torchvision in /home/nano0/aiglass/lib/python3.10/site-packages (from clip==1.0) (0.25.0)
+Requirement already satisfied: ftfy in /home/nano0/aiglass/lib/python3.10/site-packages (from clip==1.0) (6.3.1)
+Requirement already satisfied: regex in /home/nano0/aiglass/lib/python3.10/site-packages (from clip==1.0) (2026.2.19)
+Requirement already satisfied: wcwidth in /home/nano0/aiglass/lib/python3.10/site-packages (from ftfy->clip==1.0) (0.6.0)
+Requirement already satisfied: fsspec>=0.8.5 in /home/nano0/aiglass/lib/python3.10/site-packages (from torch->clip==1.0) (2026.2.0)
+Requirement already satisfied: filelock in /home/nano0/aiglass/lib/python3.10/site-packages (from torch->clip==1.0) (3.24.3)
+Requirement already satisfied: typing-extensions>=4.10.0 in /home/nano0/aiglass/lib/python3.10/site-packages (from torch->clip==1.0) (4.15.0)
+Requirement already satisfied: sympy>=1.13.3 in /home/nano0/aiglass/lib/python3.10/site-packages (from torch->clip==1.0) (1.14.0)
+Requirement already satisfied: networkx>=2.5.1 in /home/nano0/aiglass/lib/python3.10/site-packages (from torch->clip==1.0) (3.4.2)
+Requirement already satisfied: jinja2 in /home/nano0/aiglass/lib/python3.10/site-packages (from torch->clip==1.0) (3.1.6)
+Requirement already satisfied: numpy in /home/nano0/aiglass/lib/python3.10/site-packages (from torchvision->clip==1.0) (1.26.4)
+Requirement already satisfied: pillow!=8.3.*,>=5.3.0 in /home/nano0/aiglass/lib/python3.10/site-packages (from torchvision->clip==1.0) (10.1.0)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in /home/nano0/aiglass/lib/python3.10/site-packages (from sympy>=1.13.3->torch->clip==1.0) (1.3.0)
+Requirement already satisfied: MarkupSafe>=2.0 in /home/nano0/aiglass/lib/python3.10/site-packages (from jinja2->torch->clip==1.0) (3.0.3)
+(aiglass) nano0@ubuntu:~/Codes/AIglass-dev$ python app_main.py
+AIGLASS_DEVICE=cuda:0 但未检测到 CUDA，将回退到 CPU
+pygame 2.5.2 (SDL 2.28.3, Python 3.10.12)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+[NAVIGATION] 开始加载导航模型...
+[NAVIGATION] 模型文件存在，开始加载...
+[NAVIGATION] CUDA不可用，模型仍在CPU
+[NAVIGATION] 模型测试成功，支持的类别数: 2
+[NAVIGATION] 模型类别: {0: 'road_crossing', 1: 'blind_path'}
+[NAVIGATION] 尝试加载障碍物检测模型: model/yoloe-11l-seg.pt
+[NAVIGATION] 障碍物检测模型文件存在，开始加载...
+YOLOe-11l-seg summary (fused): 227 layers, 35,117,862 parameters, 2,254,374 gradients, 134.1 GFLOPs
+[NAVIGATION] ========== YOLO-E 障碍物检测器加载成功 ==========
+[NAVIGATION] YOLO-E 模型已初始化
+[NAVIGATION] 模型设备: cpu
+[NAVIGATION] 白名单类别数: 66
+[NAVIGATION] 白名单前10个类别: person, bicycle, car, motorcycle, bus, truck, scooter, stroller, wheelchair, dog
+[NAVIGATION] YOLO-E 文本特征已预计算
+[NAVIGATION] 文本特征张量形状: torch.Size([1, 66, 512])
+[NAVIGATION] 开始测试 YOLO-E 检测功能...
+[NAVIGATION] YOLO-E 检测测试成功!
+[NAVIGATION] 测试检测结果数: 0
+[NAVIGATION] ========== YOLO-E 障碍物检测器加载完成 ==========
+[NAVIGATION] 模型加载完成 - yolo_seg_model: True
+[TRAFFIC_LIGHT] 开始预加载红绿灯检测模型...
+[TRAFFIC] 加载 YOLO 红绿灯检测模型...
+[TRAFFIC] 模型加载成功: /home/nano0/Codes/AIglass-dev/model/trafficlight.pt
+[TRAFFIC] 模型类别: {0: 'blank', 1: 'countdown_blank', 2: 'countdown_go', 3: 'countdown_stop', 4: 'crossing', 5: 'go', 6: 'stop'}
+[TRAFFIC_LIGHT] 红绿灯检测模型预加载成功
+[TRAFFIC_LIGHT] 模型预热完成
+/home/nano0/Codes/AIglass-dev/app_main.py:2740: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/home/nano0/Codes/AIglass-dev/app_main.py:2783: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/home/nano0/Codes/AIglass-dev/app_main.py:2839: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/home/nano0/Codes/AIglass-dev/app_main.py:2850: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/home/nano0/Codes/AIglass-dev/app_main.py:2861: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/home/nano0/Codes/AIglass-dev/app_main.py:2872: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/home/nano0/Codes/AIglass-dev/app_main.py:2877: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("shutdown")
+[AUDIO-FORCE] event=audio_init output_mode=local auto_switch=True local_fallback=True
+[AUDIO] 蓝牙自动切换已启用：将按播放前检测 bluez sink 来动态路由
+2026-02-20 15:49:10.258675869 [W:onnxruntime:Default, device_discovery.cc:164 DiscoverDevicesForPlatform] GPU device discovery failed: device_discovery.cc:89 ReadFileContents Failed to open file: "/sys/class/drm/card1/device/vendor"
+[AUDIO] Piper-TTS 已启用
+[AUDIO] 已合并 voice 映射 3247 条（files=2）
+[AUDIO] 开始预加载音频文件...
+[AUDIO-FORCE] event=audio_init output_mode=local auto_switch=True local_fallback=True
+[AUDIO] 蓝牙自动切换已启用：将按播放前检测 bluez sink 来动态路由
+[AUDIO] Piper-TTS 已启用
+[AUDIO] 已合并 voice 映射 3247 条（files=2）
+[AUDIO] 开始预加载音频文件...
+                     
+压缩音频失败 /home/nano0/Codes/AIglass-dev/voice/前方有电脑.wav: file does not start with RIFF id
+[AUDIO] 加载音频文件失败 /home/nano0/Codes/AIglass-dev/voice/前方有电脑.wav: file does not start with RIFF id
+压缩音频失败 /home/nano0/Codes/AIglass-dev/voice/前方有电脑.wav: file does not start with RIFF id
+[AUDIO] 加载音频文件失败 /home/nano0/Codes/AIglass-dev/voice/前方有电脑.wav: file does not start with RIFF id
+压缩音频失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_f7141807f6b4.wav: file does not start with RIFF id
+[AUDIO] 加载音频文件失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_f7141807f6b4.wav: file does not start with RIFF id
+压缩音频失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_f7141807f6b4.wav: file does not start with RIFF id
+[AUDIO] 加载音频文件失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_f7141807f6b4.wav: file does not start with RIFF id
+压缩音频失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_86d113c69fe9.wav: file does not start with RIFF id
+[AUDIO] 加载音频文件失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_86d113c69fe9.wav: file does not start with RIFF id
+压缩音频失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_86d113c69fe9.wav: file does not start with RIFF id
+[AUDIO] 加载音频文件失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_86d113c69fe9.wav: file does not start with RIFF id
+压缩音频失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_8b008e3b6e86.wav: file does not start with RIFF id
+压缩音频失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_8b008e3b6e86.wav: file does not start with RIFF id
+[AUDIO] 加载音频文件失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_8b008e3b6e86.wav: file does not start with RIFF id
+[AUDIO] 加载音频文件失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_8b008e3b6e86.wav: file does not start with RIFF id
+压缩音频失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_ee7f305751a5.wav: file does not start with RIFF id
+压缩音频失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_ee7f305751a5.wav: file does not start with RIFF id
+[AUDIO] 加载音频文件失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_ee7f305751a5.wav: file does not start with RIFF id
+[AUDIO] 加载音频文件失败 /home/nano0/Codes/AIglass-dev/voice/generated/tts_ee7f305751a5.wav: file does not start with RIFF id
+[AUDIO] 预加载完成，共加载 3242 个音频文件
+[AUDIO] 音频压缩统计:
+  - 文件数: 3240
+  - 原始大小: 146268.4 KB
+  - 压缩后: 36592.9 KB
+  - 压缩率: 25.0%
+  - 节省: 109675.5 KB
+[AUDIO] 音频系统初始化完成（预加载+工作线程，输出模式: local）
+[AUDIO] 音频系统初始化完成
+[AUDIO] 预加载完成，共加载 3242 个音频文件
+[AUDIO] 音频压缩统计:
+  - 文件数: 3240
+  - 原始大小: 146268.4 KB
+  - 压缩后: 36592.9 KB
+  - 压缩率: 25.0%
+  - 节省: 109675.5 KB
+[AUDIO] 音频系统初始化完成（预加载+工作线程，输出模式: local）
+[AUDIO] 已启用本地扬声器兜底输出（pyaudio）
+[AUDIO] 文本命中成功: '音频链路自检完成' (56116 bytes)
+[AUDIO-FORCE] event=startup_selfcheck route=local_fallback stream_clients=0 loop=True local_ready=True tts=True probe_source=map probe_played=True
+[AUDIO] 启动自检: route=local_fallback, stream_clients=0, local_ready=True, tts=True, probe_source=map, probe_played=True
+[AUDIO] 启动自检详情: {'stream_clients': 0, 'server_loop_running': True, 'local_fallback_enabled': True, 'local_audio_ready': True, 'local_audio_failed': False, 'tts_available': True, 'output_mode': 'local', 'preferred_route': 'local_fallback', 'probe_source': 'map', 'probe_bytes': 56116, 'probe_played': True}
+[AUDIO] play_voice_text 被调用: 系统已启动
+[AUDIO-FORCE] event=play_voice_text_enter text=系统已启动
+[AUDIO] 文本命中成功: '系统已启动' (20248 bytes)
+[AUDIO] 成功获取音频数据: '系统已启动' (20248 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=系统已启动 source=map bytes=20248 resolve_ms=11.8
+[AUDIO-FORCE] event=audio_metrics requested=1 resolved=1 enqueued=2 dropped=0 played=0 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=11.8
+[AUDIO] 已播放测试语音: 系统已启动
+[FACE] 人脸/朋友识别器已初始化
+[LIGHT] 灯光检测器已初始化
+[SEMANTIC] 已加载场景权重: ['underpass', 'sidewalk', 'school', 'indoor', 'subway', 'hospital', 'restaurant', 'mall', 'office', 'park', 'bridge', 'stairs', 'corridor', 'parking', 'supermarket', 'restroom', 'construction', 'elevator', 'crossroad', 'bank', 'bus_stop', 'street', 'square']
+[SEMANTIC] 语义输出模块已初始化
+[UDP] listening on 0.0.0.0:12345
+[VOICE] 白名单物体预设语音准备完成: total=2588, generated=0
+[AUDIO-FORCE] event=output_dispatch mode=local_fallback stream_clients=0 bytes=57396
+[AUDIO-FORCE] event=output_dispatch mode=local_fallback stream_clients=0 bytes=21528
+[CAMERA] ESP32 connected
+[NAVIGATION] 盲道导航器已初始化
+YOLOe-11l-seg summary (fused): 227 layers, 35,117,862 parameters, 2,254,374 gradients, 134.1 GFLOPs
+[CROSS_STREET] 过马路导航器已初始化（简化版 - 仅斑马线检测）
+[NAV MASTER] 统领状态机已初始化（托管模式）
+[VOICE_SCHED] 语音调度器已初始化
+[ITEM_SEARCH] 物品搜索增强器已初始化
+[NIGHT_MODE] 夜间检测器已初始化
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+
+[AUDIO] client connected
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[WS] connection closed
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+
+[AUDIO] client connected
+[AUDIO] START received
+[AUDIO] play_voice_text 被调用: 当前处于餐厅。 第1个物体：8点方向左侧的椅子，距离约4.4米，建议从右侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前处于餐厅。 第1个物体：8点方向左侧的椅子，距离约4.4米，建议从右侧绕开。
+[AUDIO] 全文 TTS 成功: '当前处于餐厅。 第1个物体：8点方向左侧的椅子，距离约4.4米，建议从右侧绕开。' (114800 bytes)
+[AUDIO] 成功获取音频数据: '当前处于餐厅。 第1个物体：8点方向左侧的椅子，距离约4.4米，建议从右侧绕开。' (114800 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前处于餐厅。 第1个物体：8点方向左侧的椅子，距离约4.4米，建议从右侧绕开。 source=tts bytes=114800 resolve_ms=2445.2
+[AUDIO-FORCE] event=audio_metrics requested=2 resolved=2 enqueued=3 dropped=0 played=2 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1228.5
+[ASR/AI FINAL] [导航] 当前处于餐厅。 第1个物体：8点方向左侧的椅子，距离约4.4米，建议从右侧绕开。
+
+[AUDIO] client connected
+[AUDIO] START received
+
+[AUDIO] client connected
+[AUDIO] START received
+Exception in thread Thread-7 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=116720
+[AUDIO-FORCE] event=audio_metrics requested=2 resolved=2 enqueued=3 dropped=0 played=3 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1228.5
+
+[AUDIO] client connected
+[AUDIO] START received
+Exception in thread Thread-10 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+Exception in thread Thread-12 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+Exception in thread Thread-14 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[WS] connection closed
+
+[AUDIO] client connected
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[WS] connection closed
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+
+[AUDIO] client connected
+[AUDIO] START received
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[AUDIO] play_voice_text 被调用: 当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.5米，建议从左侧绕开。 第3个物体：3点方向右侧的人，距离约8.0米，建议从左侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.5米，建议从左侧绕开。 第3个物体：3点方...
+[AUDIO] 全文 TTS 成功: '当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.5米，建议从左侧绕开。 第3个物体：3点方向右侧的人，距离约8.0米，建议从左侧绕开。' (326566 bytes)
+[AUDIO] 成功获取音频数据: '当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.5米，建议从左侧绕开。 第3个物体：3点方向右侧的人，距离约8.0米，建议从左侧绕开。' (326566 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.5米，建议从左侧绕开。 第3个物体：3点方... source=tts bytes=326566 resolve_ms=3492.2
+[AUDIO-FORCE] event=audio_metrics requested=3 resolved=3 enqueued=4 dropped=0 played=3 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1983.1
+[ASR/AI FINAL] [导航] 当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.5米，建议从左侧绕开。 第3个物体：3点方向右侧的人，距离约8.0米，建议从左侧绕开。
+Exception in thread Thread-16 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[AUDIO] play_voice_text 被调用: 前方有障碍物，注意安全
+[AUDIO-FORCE] event=play_voice_text_enter text=前方有障碍物，注意安全
+[AUDIO] 文本命中成功: '前方有障碍物，注意安全' (42912 bytes)
+[AUDIO] 成功获取音频数据: '前方有障碍物，注意安全' (42912 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=前方有障碍物，注意安全 source=map bytes=42912 resolve_ms=23.3
+[AUDIO-FORCE] event=audio_metrics requested=4 resolved=4 enqueued=5 dropped=0 played=3 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1493.1
+[ASR/AI FINAL] [导航] 前方有障碍物，注意安全
+[AUTO_SCENE] 检测到场景: obstacle, 播报: 前方有障碍物，注意安全
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=7.6 sem_ms/frame=1642.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=2
+[AUDIO] play_voice_text 被调用: 当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.4米，建议从左侧绕开。 第3个物体：5点方向前方的人，距离约8.0米，建议稍微向右侧避让。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.4米，建议从左侧绕开。 第3个物体：5点方...
+[AUDIO] 全文 TTS 成功: '当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.4米，建议从左侧绕开。 第3个物体：5点方向前方的人，距离约8.0米，建议稍微向右侧避让。' (331024 bytes)
+[AUDIO] 成功获取音频数据: '当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.4米，建议从左侧绕开。 第3个物体：5点方向前方的人，距离约8.0米，建议稍微向右侧避让。' (331024 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.4米，建议从左侧绕开。 第3个物体：5点方... source=tts bytes=331024 resolve_ms=3488.8
+[AUDIO-FORCE] event=audio_metrics requested=5 resolved=5 enqueued=6 dropped=0 played=3 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1892.3
+[ASR/AI FINAL] [导航] 当前环境扫描结果： 第1个物体：【注意】8点方向左侧的人，距离约1.7米，建议从右侧绕开。 第2个物体：4点方向右侧的人，距离约5.4米，建议从左侧绕开。 第3个物体：5点方向前方的人，距离约8.0米，建议稍微向右侧避让。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.4 sem_ms/frame=1578.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+Corrupt JPEG data: premature end of data segment
+[AUDIO] play_voice_text 被调用: 当前环境扫描结果： 第1个物体：10点方向左侧的人，距离约3.2米，建议从右侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境扫描结果： 第1个物体：10点方向左侧的人，距离约3.2米，建议从右侧绕开。
+[AUDIO] 全文 TTS 成功: '当前环境扫描结果： 第1个物体：10点方向左侧的人，距离约3.2米，建议从右侧绕开。' (116100 bytes)
+[AUDIO] 成功获取音频数据: '当前环境扫描结果： 第1个物体：10点方向左侧的人，距离约3.2米，建议从右侧绕开。' (116100 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境扫描结果： 第1个物体：10点方向左侧的人，距离约3.2米，建议从右侧绕开。 source=tts bytes=116100 resolve_ms=2487.3
+[AUDIO-FORCE] event=audio_metrics requested=6 resolved=6 enqueued=7 dropped=0 played=3 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1991.4
+[ASR/AI FINAL] [导航] 当前环境扫描结果： 第1个物体：10点方向左侧的人，距离约3.2米，建议从右侧绕开。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=2.9 sem_ms/frame=1534.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 注意，8点方向(左侧)约3步有人，从右侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=注意，8点方向(左侧)约3步有人，从右侧绕开
+[AUDIO] 全文 TTS 成功: '注意，8点方向(左侧)约3步有人，从右侧绕开' (64274 bytes)
+[AUDIO] 成功获取音频数据: '注意，8点方向(左侧)约3步有人，从右侧绕开' (64274 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=注意，8点方向(左侧)约3步有人，从右侧绕开 source=tts bytes=64274 resolve_ms=2192.7
+[AUDIO-FORCE] event=audio_metrics requested=7 resolved=7 enqueued=8 dropped=0 played=3 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=2020.2
+[ASR/AI FINAL] [导航] 注意，8点方向(左侧)约3步有人，从右侧绕开
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1533.8 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 注意，9点方向(左侧)约3步有人，从右侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=注意，9点方向(左侧)约3步有人，从右侧绕开
+[AUDIO] 全文 TTS 成功: '注意，9点方向(左侧)约3步有人，从右侧绕开' (70218 bytes)
+[AUDIO] 成功获取音频数据: '注意，9点方向(左侧)约3步有人，从右侧绕开' (70218 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=注意，9点方向(左侧)约3步有人，从右侧绕开 source=tts bytes=70218 resolve_ms=2214.5
+[AUDIO-FORCE] event=audio_metrics requested=8 resolved=8 enqueued=9 dropped=0 played=3 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=2044.5
+[ASR/AI FINAL] [导航] 注意，9点方向(左侧)约3步有人，从右侧绕开
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1554.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 注意，9点方向(左侧)约3步有人，从右侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=注意，9点方向(左侧)约3步有人，从右侧绕开
+[AUDIO] 文本命中成功: '注意，9点方向(左侧)约3步有人，从右侧绕开' (70220 bytes)
+[AUDIO] 成功获取音频数据: '注意，9点方向(左侧)约3步有人，从右侧绕开' (70220 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=注意，9点方向(左侧)约3步有人，从右侧绕开 source=map bytes=70220 resolve_ms=186.2
+[AUDIO-FORCE] event=audio_metrics requested=9 resolved=9 enqueued=10 dropped=0 played=3 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1838.0
+[ASR/AI FINAL] [导航] 注意，9点方向(左侧)约3步有人，从右侧绕开
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1531.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+Corrupt JPEG data: premature end of data segment
+[AUDIO] play_voice_text 被调用: 当前环境扫描结果： 第1个物体：11点方向左侧的人，距离约5.9米，建议从右侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境扫描结果： 第1个物体：11点方向左侧的人，距离约5.9米，建议从右侧绕开。
+[AUDIO] 全文 TTS 成功: '当前环境扫描结果： 第1个物体：11点方向左侧的人，距离约5.9米，建议从右侧绕开。' (128546 bytes)
+[AUDIO] 成功获取音频数据: '当前环境扫描结果： 第1个物体：11点方向左侧的人，距离约5.9米，建议从右侧绕开。' (128546 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境扫描结果： 第1个物体：11点方向左侧的人，距离约5.9米，建议从右侧绕开。 source=tts bytes=128546 resolve_ms=2493.4
+[AUDIO-FORCE] event=audio_metrics requested=10 resolved=10 enqueued=11 dropped=0 played=3 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1903.5
+[ASR/AI FINAL] [导航] 当前环境扫描结果： 第1个物体：11点方向左侧的人，距离约5.9米，建议从右侧绕开。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=2.8 sem_ms/frame=1546.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[AUDIO] START received
+[AUDIO] play_voice_text 被调用: 注意，3点方向约3步有人，稍微向右侧避让
+[AUDIO-FORCE] event=play_voice_text_enter text=注意，3点方向约3步有人，稍微向右侧避让
+[AUDIO] 全文 TTS 成功: '注意，3点方向约3步有人，稍微向右侧避让' (76720 bytes)
+[AUDIO] 成功获取音频数据: '注意，3点方向约3步有人，稍微向右侧避让' (76720 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=注意，3点方向约3步有人，稍微向右侧避让 source=tts bytes=76720 resolve_ms=2212.1
+[AUDIO-FORCE] event=audio_metrics requested=11 resolved=11 enqueued=12 dropped=0 played=3 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1931.6
+[ASR/AI FINAL] [导航] 注意，3点方向约3步有人，稍微向右侧避让
+Exception in thread Thread-21 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[WS] connection closed
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+[WS] connection closed
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=44832
+[AUDIO-FORCE] event=audio_metrics requested=11 resolved=11 enqueued=12 dropped=0 played=4 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1931.6
+ALSA lib pcm.c:8568:(snd_pcm_recover) underrun occurred
+[AUDIO-FORCE] event=output_dispatch mode=local_fallback stream_clients=0 bytes=78000
+
+[AUDIO] client connected
+[AUDIO] START received
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[AUDIO] play_voice_text 被调用: 当前处于房间内。 第1个物体：6点方向前方的床，距离约1.5米，建议稍微向右侧避让。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前处于房间内。 第1个物体：6点方向前方的床，距离约1.5米，建议稍微向右侧避让。
+[AUDIO] 全文 TTS 成功: '当前处于房间内。 第1个物体：6点方向前方的床，距离约1.5米，建议稍微向右侧避让。' (130218 bytes)
+[AUDIO] 成功获取音频数据: '当前处于房间内。 第1个物体：6点方向前方的床，距离约1.5米，建议稍微向右侧避让。' (130218 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前处于房间内。 第1个物体：6点方向前方的床，距离约1.5米，建议稍微向右侧避让。 source=tts bytes=130218 resolve_ms=2614.4
+[AUDIO-FORCE] event=audio_metrics requested=12 resolved=12 enqueued=13 dropped=0 played=5 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1988.5
+[ASR/AI FINAL] [导航] 当前处于房间内。 第1个物体：6点方向前方的床，距离约1.5米，建议稍微向右侧避让。
+[WS] connection closed
+[PIPELINE] fps_in=4.6 decode_ok=100.0% decode_ms=5.5 sem_ms/frame=71.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 8点方向(左侧)约8步有人，从右侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=8点方向(左侧)约8步有人，从右侧绕开
+Exception in thread Thread-23 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[AUDIO] 全文 TTS 成功: '8点方向(左侧)约8步有人，从右侧绕开' (62044 bytes)
+[AUDIO] 成功获取音频数据: '8点方向(左侧)约8步有人，从右侧绕开' (62044 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=8点方向(左侧)约8步有人，从右侧绕开 source=tts bytes=62044 resolve_ms=2276.6
+[ASR/AI FINAL] [导航] 8点方向(左侧)约8步有人，从右侧绕开
+[PIPELINE] fps_in=0.5 decode_ok=100.0% decode_ms=4.8 sem_ms/frame=1281.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 9点方向(左侧)约8步有人，从右侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=9点方向(左侧)约8步有人，从右侧绕开
+[AUDIO] 全文 TTS 成功: '9点方向(左侧)约8步有人，从右侧绕开' (64644 bytes)
+[AUDIO] 成功获取音频数据: '9点方向(左侧)约8步有人，从右侧绕开' (64644 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=9点方向(左侧)约8步有人，从右侧绕开 source=tts bytes=64644 resolve_ms=2210.2
+[AUDIO-FORCE] event=audio_metrics requested=14 resolved=14 enqueued=15 dropped=0 played=5 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=2024.9
+[ASR/AI FINAL] [导航] 9点方向(左侧)约8步有人，从右侧绕开
+[NAVIGATION DEBUG] 帧:30, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:60, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:90, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=12.7 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=44.5 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 7点方向(左侧)约13步有人，从右侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=7点方向(左侧)约13步有人，从右侧绕开
+[AUDIO] 全文 TTS 成功: '7点方向(左侧)约13步有人，从右侧绕开' (67988 bytes)
+[AUDIO] 成功获取音频数据: '7点方向(左侧)约13步有人，从右侧绕开' (67988 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=7点方向(左侧)约13步有人，从右侧绕开 source=tts bytes=67988 resolve_ms=2245.5
+[AUDIO-FORCE] event=audio_metrics requested=15 resolved=15 enqueued=16 dropped=0 played=5 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=2039.6
+[ASR/AI FINAL] [导航] 7点方向(左侧)约13步有人，从右侧绕开
+[NAVIGATION DEBUG] 帧:120, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:150, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=9.0 decode_ok=100.0% decode_ms=3.5 sem_ms/frame=59.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 9点方向(左侧)约5步有人，从右侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=9点方向(左侧)约5步有人，从右侧绕开
+[AUDIO] 全文 TTS 成功: '9点方向(左侧)约5步有人，从右侧绕开' (59630 bytes)
+[AUDIO] 成功获取音频数据: '9点方向(左侧)约5步有人，从右侧绕开' (59630 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=9点方向(左侧)约5步有人，从右侧绕开 source=tts bytes=59630 resolve_ms=2232.0
+[AUDIO-FORCE] event=audio_metrics requested=16 resolved=16 enqueued=17 dropped=0 played=5 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=2051.6
+[ASR/AI FINAL] [导航] 9点方向(左侧)约5步有人，从右侧绕开
+[AUDIO] START received
+[NAVIGATION DEBUG] 帧:180, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=4.7 decode_ok=100.0% decode_ms=4.1 sem_ms/frame=115.0 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 8点方向(左侧)约5步有人，从右侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=8点方向(左侧)约5步有人，从右侧绕开
+[AUDIO] 全文 TTS 成功: '8点方向(左侧)约5步有人，从右侧绕开' (55728 bytes)
+[AUDIO] 成功获取音频数据: '8点方向(左侧)约5步有人，从右侧绕开' (55728 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=8点方向(左侧)约5步有人，从右侧绕开 source=tts bytes=55728 resolve_ms=2162.7
+[AUDIO-FORCE] event=audio_metrics requested=17 resolved=17 enqueued=18 dropped=0 played=5 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=2058.2
+[ASR/AI FINAL] [导航] 8点方向(左侧)约5步有人，从右侧绕开
+[NAVIGATION DEBUG] 帧:210, state=CHAT, yolomedia_running=False
+Exception in thread Thread-26 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[AUDIO] play_voice_text 被调用: 前方有障碍物，注意安全
+[AUDIO-FORCE] event=play_voice_text_enter text=前方有障碍物，注意安全
+[AUDIO] 文本命中成功: '前方有障碍物，注意安全' (42912 bytes)
+[AUDIO] 成功获取音频数据: '前方有障碍物，注意安全' (42912 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=前方有障碍物，注意安全 source=map bytes=42912 resolve_ms=21.9
+[AUDIO-FORCE] event=audio_metrics requested=18 resolved=18 enqueued=19 dropped=0 played=5 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1945.0
+[ASR/AI FINAL] [导航] 前方有障碍物，注意安全
+[AUTO_SCENE] 检测到场景: obstacle, 播报: 前方有障碍物，注意安全
+[PIPELINE] fps_in=2.9 decode_ok=100.0% decode_ms=4.7 sem_ms/frame=90.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=2
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1577.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1550.6 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1595.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1556.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1584.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1562.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1584.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[NAVIGATION DEBUG] 帧:240, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.4 sem_ms/frame=1615.6 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[AUDIO] play_voice_text 被调用: 办公楼环境
+[AUDIO-FORCE] event=play_voice_text_enter text=办公楼环境
+[AUDIO] 文本命中成功: '办公楼环境' (30896 bytes)
+[AUDIO] 成功获取音频数据: '办公楼环境' (30896 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=办公楼环境 source=map bytes=30896 resolve_ms=15.7
+[AUDIO-FORCE] event=audio_metrics requested=19 resolved=19 enqueued=20 dropped=0 played=5 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1843.5
+[ASR/AI FINAL] [导航] 办公楼环境
+[AUTO_SCENE] 检测到场景: office, 播报: 办公楼环境
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1581.8 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1579.8 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+[WS] connection closed
+[WS] connection closed
+
+[AUDIO] client connected
+[AUDIO] START received
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=132138
+[AUDIO-FORCE] event=audio_metrics requested=19 resolved=19 enqueued=20 dropped=0 played=6 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1843.5
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=328486
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=32176
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[WS] connection closed
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+Exception in thread Thread-31 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[AUDIO] play_voice_text 被调用: 当前处于房间内。 第1个物体：6点方向前方的人，距离约8.0米，建议稍微向右侧避让。 第2个物体：7点方向左侧的电视，距离约8.0米，建议从右侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前处于房间内。 第1个物体：6点方向前方的人，距离约8.0米，建议稍微向右侧避让。 第2个物体：7点方向左侧的电视，距离约8.0米，建议从右侧绕开。
+[AUDIO] 全文 TTS 成功: '当前处于房间内。 第1个物体：6点方向前方的人，距离约8.0米，建议稍微向右侧避让。 第2个物体：7点方向左侧的电视，距离约8.0米，建议从右侧绕开。' (217154 bytes)
+[AUDIO] 成功获取音频数据: '当前处于房间内。 第1个物体：6点方向前方的人，距离约8.0米，建议稍微向右侧避让。 第2个物体：7点方向左侧的电视，距离约8.0米，建议从右侧绕开。' (217154 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前处于房间内。 第1个物体：6点方向前方的人，距离约8.0米，建议稍微向右侧避让。 第2个物体：7点方向左侧的电视，距离约8.0米，建议从右侧绕开。 source=tts bytes=217154 resolve_ms=2987.9
+[AUDIO-FORCE] event=audio_metrics requested=20 resolved=20 enqueued=21 dropped=0 played=8 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1900.7
+[ASR/AI FINAL] [导航] 当前处于房间内。 第1个物体：6点方向前方的人，距离约8.0米，建议稍微向右侧避让。 第2个物体：7点方向左侧的电视，距离约8.0米，建议从右侧绕开。
+[PIPELINE] fps_in=3.0 decode_ok=100.0% decode_ms=5.4 sem_ms/frame=111.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=4.4 sem_ms/frame=1635.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1575.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1589.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[NAVIGATION DEBUG] 帧:30, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1614.5 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1598.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1550.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.4 sem_ms/frame=1581.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1558.5 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1571.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1560.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[AUDIO] play_voice_text 被调用: 前方有障碍物，注意安全
+[AUDIO-FORCE] event=play_voice_text_enter text=前方有障碍物，注意安全
+[AUDIO] 文本命中成功: '前方有障碍物，注意安全' (42912 bytes)
+[AUDIO] 成功获取音频数据: '前方有障碍物，注意安全' (42912 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=前方有障碍物，注意安全 source=map bytes=42912 resolve_ms=21.8
+[AUDIO-FORCE] event=audio_metrics requested=21 resolved=21 enqueued=22 dropped=0 played=8 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1811.2
+[ASR/AI FINAL] [导航] 前方有障碍物，注意安全
+[AUTO_SCENE] 检测到场景: obstacle, 播报: 前方有障碍物，注意安全
+[PIPELINE] fps_in=0.2 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1592.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1545.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1540.6 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[NAVIGATION DEBUG] 帧:60, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1563.5 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1603.0 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1536.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1608.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1574.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1572.8 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1534.6 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1556.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1593.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1565.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1566.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.4 sem_ms/frame=1535.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1582.0 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1560.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1560.6 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1584.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1543.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1596.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[NAVIGATION DEBUG] 帧:90, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1539.5 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1552.6 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1536.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+
+[AUDIO] client connected
+[AUDIO] START received
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=44832
+[AUDIO-FORCE] event=audio_metrics requested=21 resolved=21 enqueued=22 dropped=0 played=9 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1811.2
+[WS] connection closed
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+Exception in thread Thread-41 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[AUDIO] play_voice_text 被调用: 当前处于电梯里。 第1个物体：4点方向右侧的电梯，距离约2.8米，建议从左侧绕开。 第2个物体：4点方向右侧的床，距离约2.9米，建议从左侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前处于电梯里。 第1个物体：4点方向右侧的电梯，距离约2.8米，建议从左侧绕开。 第2个物体：4点方向右侧的床，距离约2.9米，建议从左侧绕开。
+[AUDIO] 全文 TTS 成功: '当前处于电梯里。 第1个物体：4点方向右侧的电梯，距离约2.8米，建议从左侧绕开。 第2个物体：4点方向右侧的床，距离约2.9米，建议从左侧绕开。' (210838 bytes)
+[AUDIO] 成功获取音频数据: '当前处于电梯里。 第1个物体：4点方向右侧的电梯，距离约2.8米，建议从左侧绕开。 第2个物体：4点方向右侧的床，距离约2.9米，建议从左侧绕开。' (210838 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前处于电梯里。 第1个物体：4点方向右侧的电梯，距离约2.8米，建议从左侧绕开。 第2个物体：4点方向右侧的床，距离约2.9米，建议从左侧绕开。 source=tts bytes=210838 resolve_ms=3016.7
+[AUDIO-FORCE] event=audio_metrics requested=22 resolved=22 enqueued=23 dropped=0 played=9 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1866.0
+[ASR/AI FINAL] [导航] 当前处于电梯里。 第1个物体：4点方向右侧的电梯，距离约2.8米，建议从左侧绕开。 第2个物体：4点方向右侧的床，距离约2.9米，建议从左侧绕开。
+[PIPELINE] fps_in=1.6 decode_ok=100.0% decode_ms=6.0 sem_ms/frame=207.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 4点方向(右侧)约5步有电梯，从左侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=4点方向(右侧)约5步有电梯，从左侧绕开
+[AUDIO] 全文 TTS 成功: '4点方向(右侧)约5步有电梯，从左侧绕开' (63344 bytes)
+[AUDIO] 成功获取音频数据: '4点方向(右侧)约5步有电梯，从左侧绕开' (63344 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=4点方向(右侧)约5步有电梯，从左侧绕开 source=tts bytes=63344 resolve_ms=2206.2
+[ASR/AI FINAL] [导航] 4点方向(右侧)约5步有电梯，从左侧绕开
+[PIPELINE] fps_in=0.5 decode_ok=100.0% decode_ms=5.4 sem_ms/frame=1109.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 4点方向(右侧)约5步有电梯，从左侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=4点方向(右侧)约5步有电梯，从左侧绕开
+[AUDIO] 文本命中成功: '4点方向(右侧)约5步有电梯，从左侧绕开' (63344 bytes)
+[AUDIO] 成功获取音频数据: '4点方向(右侧)约5步有电梯，从左侧绕开' (63344 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=4点方向(右侧)约5步有电梯，从左侧绕开 source=map bytes=63344 resolve_ms=170.1
+[AUDIO-FORCE] event=audio_metrics requested=24 resolved=24 enqueued=25 dropped=0 played=9 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1809.6
+[ASR/AI FINAL] [导航] 4点方向(右侧)约5步有电梯，从左侧绕开
+[NAVIGATION DEBUG] 帧:30, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:60, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:90, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:120, state=CHAT, yolomedia_running=False
+[AUDIO] START received
+[NAVIGATION DEBUG] 帧:150, state=CHAT, yolomedia_running=False
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=219074
+[PIPELINE] fps_in=25.6 decode_ok=100.0% decode_ms=4.0 sem_ms/frame=21.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 5点方向(右侧)约4步有电梯，从左侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=5点方向(右侧)约4步有电梯，从左侧绕开
+[AUDIO] 全文 TTS 成功: '5点方向(右侧)约4步有电梯，从左侧绕开' (61672 bytes)
+[AUDIO] 成功获取音频数据: '5点方向(右侧)约4步有电梯，从左侧绕开' (61672 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=5点方向(右侧)约4步有电梯，从左侧绕开 source=tts bytes=61672 resolve_ms=2201.6
+[AUDIO-FORCE] event=audio_metrics requested=25 resolved=25 enqueued=26 dropped=0 played=10 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1825.2
+[ASR/AI FINAL] [导航] 5点方向(右侧)约4步有电梯，从左侧绕开
+[NAVIGATION DEBUG] 帧:180, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:210, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=12.2 decode_ok=100.0% decode_ms=3.4 sem_ms/frame=44.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+Exception in thread Thread-44 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[AUDIO] play_voice_text 被调用: 4点方向(右侧)约5步有床，从左侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=4点方向(右侧)约5步有床，从左侧绕开
+[AUDIO] 全文 TTS 成功: '4点方向(右侧)约5步有床，从左侧绕开' (59258 bytes)
+[AUDIO] 成功获取音频数据: '4点方向(右侧)约5步有床，从左侧绕开' (59258 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=4点方向(右侧)约5步有床，从左侧绕开 source=tts bytes=59258 resolve_ms=2206.2
+[AUDIO-FORCE] event=audio_metrics requested=26 resolved=26 enqueued=27 dropped=0 played=10 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1839.9
+[ASR/AI FINAL] [导航] 4点方向(右侧)约5步有床，从左侧绕开
+[NAVIGATION DEBUG] 帧:240, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:270, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:300, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=11.5 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=47.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。
+[AUDIO] 全文 TTS 成功: '当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。' (124274 bytes)
+[AUDIO] 成功获取音频数据: '当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。' (124274 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。 source=tts bytes=124274 resolve_ms=2514.2
+[AUDIO-FORCE] event=audio_metrics requested=27 resolved=27 enqueued=28 dropped=0 played=10 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1864.9
+[ASR/AI FINAL] [导航] 当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。
+[NAVIGATION DEBUG] 帧:330, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:360, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=10.4 decode_ok=100.0% decode_ms=2.8 sem_ms/frame=51.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 4点方向(右侧)约6步有电梯，从左侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=4点方向(右侧)约6步有电梯，从左侧绕开
+[AUDIO] 全文 TTS 成功: '4点方向(右侧)约6步有电梯，从左侧绕开' (64088 bytes)
+[AUDIO] 成功获取音频数据: '4点方向(右侧)约6步有电梯，从左侧绕开' (64088 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=4点方向(右侧)约6步有电梯，从左侧绕开 source=tts bytes=64088 resolve_ms=2224.7
+[AUDIO-FORCE] event=audio_metrics requested=28 resolved=28 enqueued=29 dropped=0 played=10 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1877.7
+[ASR/AI FINAL] [导航] 4点方向(右侧)约6步有电梯，从左侧绕开
+[NAVIGATION DEBUG] 帧:390, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:420, state=CHAT, yolomedia_running=False
+[AUDIO] START received
+[PIPELINE] fps_in=11.7 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=45.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 4点方向(右侧)约6步有电梯，从左侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=4点方向(右侧)约6步有电梯，从左侧绕开
+[AUDIO] 文本命中成功: '4点方向(右侧)约6步有电梯，从左侧绕开' (64088 bytes)
+[AUDIO] 成功获取音频数据: '4点方向(右侧)约6步有电梯，从左侧绕开' (64088 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=4点方向(右侧)约6步有电梯，从左侧绕开 source=map bytes=64088 resolve_ms=172.7
+[ASR/AI FINAL] [导航] 4点方向(右侧)约6步有电梯，从左侧绕开
+[NAVIGATION DEBUG] 帧:450, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:480, state=CHAT, yolomedia_running=False
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=64624
+[AUDIO-FORCE] event=audio_metrics requested=29 resolved=29 enqueued=30 dropped=0 played=11 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1818.9
+[NAVIGATION DEBUG] 帧:510, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=11.9 decode_ok=100.0% decode_ms=4.3 sem_ms/frame=45.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。
+[AUDIO] 文本命中成功: '当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。' (124276 bytes)
+[AUDIO] 成功获取音频数据: '当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。' (124276 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。 source=map bytes=124276 resolve_ms=334.0
+[ASR/AI FINAL] [导航] 当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.4米，建议从左侧绕开。
+Exception in thread Thread-47 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[NAVIGATION DEBUG] 帧:540, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:570, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:600, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=17.1 decode_ok=100.0% decode_ms=4.8 sem_ms/frame=31.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。
+[AUDIO] 全文 TTS 成功: '当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。' (118144 bytes)
+[AUDIO] 成功获取音频数据: '当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。' (118144 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。 source=tts bytes=118144 resolve_ms=2507.1
+[AUDIO-FORCE] event=audio_metrics requested=31 resolved=31 enqueued=32 dropped=0 played=11 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1793.2
+[ASR/AI FINAL] [导航] 当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。
+[NAVIGATION DEBUG] 帧:630, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:660, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=11.2 decode_ok=100.0% decode_ms=2.7 sem_ms/frame=48.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 4点方向(右侧)约5步有床，从左侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=4点方向(右侧)约5步有床，从左侧绕开
+[AUDIO] 文本命中成功: '4点方向(右侧)约5步有床，从左侧绕开' (59260 bytes)
+[AUDIO] 成功获取音频数据: '4点方向(右侧)约5步有床，从左侧绕开' (59260 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=4点方向(右侧)约5步有床，从左侧绕开 source=map bytes=59260 resolve_ms=168.2
+[ASR/AI FINAL] [导航] 4点方向(右侧)约5步有床，从左侧绕开
+[NAVIGATION DEBUG] 帧:690, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:720, state=CHAT, yolomedia_running=False
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=65368
+[AUDIO] START received
+[NAVIGATION DEBUG] 帧:30, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:60, state=CHAT, yolomedia_running=False
+[AUDIO] play_voice_text 被调用: 当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。
+[AUDIO] 文本命中成功: '当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。' (118144 bytes)
+[AUDIO] 成功获取音频数据: '当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。' (118144 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。 source=map bytes=118144 resolve_ms=317.7
+[AUDIO-FORCE] event=audio_metrics requested=33 resolved=33 enqueued=34 dropped=0 played=12 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1699.3
+[ASR/AI FINAL] [导航] 当前处于房间内。 第1个物体：4点方向右侧的床，距离约3.1米，建议从左侧绕开。
+[PIPELINE] fps_in=10.9 decode_ok=100.0% decode_ms=6.1 sem_ms/frame=49.8 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[NAVIGATION DEBUG] 帧:90, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:120, state=CHAT, yolomedia_running=False
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=212758
+[NAVIGATION DEBUG] 帧:150, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:180, state=CHAT, yolomedia_running=False
+Exception in thread Thread-49 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[AUDIO] play_voice_text 被调用: 4点方向(右侧)约5步有床，从左侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=4点方向(右侧)约5步有床，从左侧绕开
+[AUDIO] 文本命中成功: '4点方向(右侧)约5步有床，从左侧绕开' (59260 bytes)
+[AUDIO] 成功获取音频数据: '4点方向(右侧)约5步有床，从左侧绕开' (59260 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=4点方向(右侧)约5步有床，从左侧绕开 source=map bytes=59260 resolve_ms=29.8
+[AUDIO-FORCE] event=audio_metrics requested=34 resolved=34 enqueued=35 dropped=0 played=13 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1650.2
+[ASR/AI FINAL] [导航] 4点方向(右侧)约5步有床，从左侧绕开
+[PIPELINE] fps_in=20.1 decode_ok=100.0% decode_ms=4.5 sem_ms/frame=28.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[NAVIGATION DEBUG] 帧:210, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:240, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:270, state=CHAT, yolomedia_running=False
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=60540
+[AUDIO] play_voice_text 被调用: 4点方向(右侧)约5步有床，从左侧绕开
+[AUDIO-FORCE] event=play_voice_text_enter text=4点方向(右侧)约5步有床，从左侧绕开
+[AUDIO] 文本命中成功: '4点方向(右侧)约5步有床，从左侧绕开' (59260 bytes)
+[AUDIO] 成功获取音频数据: '4点方向(右侧)约5步有床，从左侧绕开' (59260 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=4点方向(右侧)约5步有床，从左侧绕开 source=map bytes=59260 resolve_ms=29.7
+[AUDIO-FORCE] event=audio_metrics requested=35 resolved=35 enqueued=36 dropped=0 played=14 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1603.9
+[ASR/AI FINAL] [导航] 4点方向(右侧)约5步有床，从左侧绕开
+[PIPELINE] fps_in=19.0 decode_ok=100.0% decode_ms=4.8 sem_ms/frame=28.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[NAVIGATION DEBUG] 帧:300, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:330, state=CHAT, yolomedia_running=False
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=119424
+[NAVIGATION DEBUG] 帧:360, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:390, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=10.5 decode_ok=100.0% decode_ms=4.8 sem_ms/frame=15.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[AUDIO] play_voice_text 被调用: 当前环境扫描结果： 第1个物体：7点方向左侧的人，距离约4.1米，建议从右侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境扫描结果： 第1个物体：7点方向左侧的人，距离约4.1米，建议从右侧绕开。
+[AUDIO] 全文 TTS 成功: '当前环境扫描结果： 第1个物体：7点方向左侧的人，距离约4.1米，建议从右侧绕开。' (119444 bytes)
+[AUDIO] 成功获取音频数据: '当前环境扫描结果： 第1个物体：7点方向左侧的人，距离约4.1米，建议从右侧绕开。' (119444 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境扫描结果： 第1个物体：7点方向左侧的人，距离约4.1米，建议从右侧绕开。 source=tts bytes=119444 resolve_ms=2499.9
+[AUDIO-FORCE] event=audio_metrics requested=36 resolved=36 enqueued=37 dropped=0 played=15 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1628.8
+[ASR/AI FINAL] [导航] 当前环境扫描结果： 第1个物体：7点方向左侧的人，距离约4.1米，建议从右侧绕开。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=2.9 sem_ms/frame=1590.6 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=80.7
+[AUDIO-FORCE] event=audio_metrics requested=37 resolved=37 enqueued=38 dropped=0 played=15 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1586.9
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=2.9 sem_ms/frame=1548.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前环境扫描结果： 第1个物体：7点方向左侧的猫，距离约3.8米，建议从右侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境扫描结果： 第1个物体：7点方向左侧的猫，距离约3.8米，建议从右侧绕开。
+[AUDIO] 全文 TTS 成功: '当前环境扫描结果： 第1个物体：7点方向左侧的猫，距离约3.8米，建议从右侧绕开。' (122044 bytes)
+[AUDIO] 成功获取音频数据: '当前环境扫描结果： 第1个物体：7点方向左侧的猫，距离约3.8米，建议从右侧绕开。' (122044 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境扫描结果： 第1个物体：7点方向左侧的猫，距离约3.8米，建议从右侧绕开。 source=tts bytes=122044 resolve_ms=2496.5
+[AUDIO-FORCE] event=audio_metrics requested=38 resolved=38 enqueued=39 dropped=0 played=15 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1610.9
+[ASR/AI FINAL] [导航] 当前环境扫描结果： 第1个物体：7点方向左侧的猫，距离约3.8米，建议从右侧绕开。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=2.9 sem_ms/frame=1597.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=73.6
+[AUDIO-FORCE] event=audio_metrics requested=39 resolved=39 enqueued=40 dropped=0 played=15 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1571.4
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=2.8 sem_ms/frame=1539.5 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=74.0
+[AUDIO-FORCE] event=audio_metrics requested=40 resolved=40 enqueued=41 dropped=0 played=15 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1534.0
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=2.8 sem_ms/frame=1584.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前处于餐厅。 第1个物体：10点方向左侧的椅子，距离约8.0米，建议从右侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前处于餐厅。 第1个物体：10点方向左侧的椅子，距离约8.0米，建议从右侧绕开。
+[AUDIO] 全文 TTS 成功: '当前处于餐厅。 第1个物体：10点方向左侧的椅子，距离约8.0米，建议从右侧绕开。' (116100 bytes)
+[AUDIO] 成功获取音频数据: '当前处于餐厅。 第1个物体：10点方向左侧的椅子，距离约8.0米，建议从右侧绕开。' (116100 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前处于餐厅。 第1个物体：10点方向左侧的椅子，距离约8.0米，建议从右侧绕开。 source=tts bytes=116100 resolve_ms=2840.9
+[AUDIO-FORCE] event=audio_metrics requested=41 resolved=41 enqueued=42 dropped=0 played=15 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1565.9
+[ASR/AI FINAL] [导航] 当前处于餐厅。 第1个物体：10点方向左侧的椅子，距离约8.0米，建议从右侧绕开。
+[NAVIGATION DEBUG] 帧:420, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:450, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:480, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:510, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:540, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:570, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=32.8 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=9.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1589.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1551.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+Corrupt JPEG data: premature end of data segment
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[AUDIO] START received
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[AUDIO] play_voice_text 被调用: 当前处于办公楼。 第1个物体：6点方向前方的电脑，距离约4.0米，建议稍微向右侧避让。 第2个物体：6点方向前方的笔记本电脑，距离约4.0米，建议稍微向右侧避让。 第3个物体：3点方向右侧的人，距离约8.0米，建议从左侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前处于办公楼。 第1个物体：6点方向前方的电脑，距离约4.0米，建议稍微向右侧避让。 第2个物体：6点方向前方的笔记本电脑，距离约4.0米，建议稍微向右侧避让。 第3个物体...
+[AUDIO] 全文 TTS 成功: '当前处于办公楼。 第1个物体：6点方向前方的电脑，距离约4.0米，建议稍微向右侧避让。 第2个物体：6点方向前方的笔记本电脑，距离约4.0米，建议稍微向右侧避让。 第3个物体：3点方向右侧的人，距离约8.0米，建议从左侧绕开。' (324150 bytes)
+[AUDIO] 成功获取音频数据: '当前处于办公楼。 第1个物体：6点方向前方的电脑，距离约4.0米，建议稍微向右侧避让。 第2个物体：6点方向前方的笔记本电脑，距离约4.0米，建议稍微向右侧避让。 第3个物体：3点方向右侧的人，距离约8.0米，建议从左侧绕开。' (324150 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前处于办公楼。 第1个物体：6点方向前方的电脑，距离约4.0米，建议稍微向右侧避让。 第2个物体：6点方向前方的笔记本电脑，距离约4.0米，建议稍微向右侧避让。 第3个物体... source=tts bytes=324150 resolve_ms=3560.7
+[AUDIO-FORCE] event=audio_metrics requested=42 resolved=42 enqueued=43 dropped=0 played=15 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1613.4
+[ASR/AI FINAL] [导航] 当前处于办公楼。 第1个物体：6点方向前方的电脑，距离约4.0米，建议稍微向右侧避让。 第2个物体：6点方向前方的笔记本电脑，距离约4.0米，建议稍微向右侧避让。 第3个物体：3点方向右侧的人，距离约8.0米，建议从左侧绕开。
+[PIPELINE] fps_in=0.2 decode_ok=100.0% decode_ms=7.8 sem_ms/frame=1625.8 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 6点方向约7步有笔记本电脑，稍微向右侧避让
+[AUDIO-FORCE] event=play_voice_text_enter text=6点方向约7步有笔记本电脑，稍微向右侧避让
+[AUDIO] 全文 TTS 成功: '6点方向约7步有笔记本电脑，稍微向右侧避让' (76720 bytes)
+[AUDIO] 成功获取音频数据: '6点方向约7步有笔记本电脑，稍微向右侧避让' (76720 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=6点方向约7步有笔记本电脑，稍微向右侧避让 source=tts bytes=76720 resolve_ms=2266.8
+[ASR/AI FINAL] [导航] 6点方向约7步有笔记本电脑，稍微向右侧避让
+[NAVIGATION DEBUG] 帧:30, state=CHAT, yolomedia_running=False
+Exception in thread Thread-54 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=60540
+[AUDIO] play_voice_text 被调用: 6点方向约7步有笔记本电脑，稍微向右侧避让
+[AUDIO-FORCE] event=play_voice_text_enter text=6点方向约7步有笔记本电脑，稍微向右侧避让
+[AUDIO] 文本命中成功: '6点方向约7步有笔记本电脑，稍微向右侧避让' (76720 bytes)
+[AUDIO] 成功获取音频数据: '6点方向约7步有笔记本电脑，稍微向右侧避让' (76720 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=6点方向约7步有笔记本电脑，稍微向右侧避让 source=map bytes=76720 resolve_ms=203.8
+[AUDIO-FORCE] event=audio_metrics requested=44 resolved=44 enqueued=45 dropped=0 played=16 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1596.2
+[ASR/AI FINAL] [导航] 6点方向约7步有笔记本电脑，稍微向右侧避让
+[PIPELINE] fps_in=7.5 decode_ok=100.0% decode_ms=4.8 sem_ms/frame=65.0 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=2
+[NAVIGATION DEBUG] 帧:60, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:90, state=CHAT, yolomedia_running=False
+[NAVIGATION DEBUG] 帧:120, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=10.8 decode_ok=100.0% decode_ms=4.4 sem_ms/frame=70.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1589.3 nav_ms/frame=0.1 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=2.9 sem_ms/frame=1578.6 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1565.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=2.9 sem_ms/frame=1542.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1582.5 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1583.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1623.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1573.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1583.8 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1547.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1603.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1552.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1590.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1538.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[NAVIGATION DEBUG] 帧:150, state=CHAT, yolomedia_running=False
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1604.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1557.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1553.5 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1579.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1549.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1605.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1583.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1547.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.7 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1521.5 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.6 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1644.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[AUDIO] play_voice_text 被调用: 前方有障碍物，注意安全
+[AUDIO-FORCE] event=play_voice_text_enter text=前方有障碍物，注意安全
+[AUDIO] 文本命中成功: '前方有障碍物，注意安全' (42912 bytes)
+[AUDIO] 成功获取音频数据: '前方有障碍物，注意安全' (42912 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=前方有障碍物，注意安全 source=map bytes=42912 resolve_ms=21.9
+[AUDIO-FORCE] event=audio_metrics requested=45 resolved=45 enqueued=46 dropped=0 played=16 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1561.2
+[ASR/AI FINAL] [导航] 前方有障碍物，注意安全
+[AUTO_SCENE] 检测到场景: obstacle, 播报: 前方有障碍物，注意安全
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1767.5 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1959.6 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=119424
+[AUDIO-FORCE] event=audio_metrics requested=45 resolved=45 enqueued=46 dropped=0 played=17 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1561.2
+ALSA lib pcm.c:8568:(snd_pcm_recover) underrun occurred
+
+[AUDIO] client connected
+[AUDIO] START received
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=78000
+[AUDIO-FORCE] event=output_dispatch mode=local_fallback stream_clients=0 bytes=78000
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=44192
+[WS] connection closed
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+Exception in thread Thread-63 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+
+[AUDIO] client connected
+[AUDIO] START received
+[AUDIO] play_voice_text 被调用: 5点方向约3步有床，稍微向右侧避让
+[AUDIO-FORCE] event=play_voice_text_enter text=5点方向约3步有床，稍微向右侧避让
+[AUDIO] 全文 TTS 成功: '5点方向约3步有床，稍微向右侧避让' (65760 bytes)
+[AUDIO] 成功获取音频数据: '5点方向约3步有床，稍微向右侧避让' (65760 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=5点方向约3步有床，稍微向右侧避让 source=tts bytes=65760 resolve_ms=2243.3
+[AUDIO-FORCE] event=audio_metrics requested=46 resolved=46 enqueued=47 dropped=0 played=20 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1576.0
+[ASR/AI FINAL] [导航] 5点方向约3步有床，稍微向右侧避让
+Corrupt JPEG data: premature end of data segment
+Corrupt JPEG data: premature end of data segment
+Corrupt JPEG data: premature end of data segment
+[WS] connection closed
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+
+[AUDIO] client connected
+[AUDIO] START received
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=67680
+
+[AUDIO] client connected
+[AUDIO] START received
+Exception in thread Thread-65 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+Exception in thread Thread-68 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+Exception in thread Thread-70 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[WS] connection closed
+[WS] connection closed
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=73.8
+[AUDIO-FORCE] event=audio_metrics requested=47 resolved=47 enqueued=48 dropped=0 played=21 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1544.1
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=5.4 sem_ms/frame=1728.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+Corrupt JPEG data: premature end of data segment
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=77.3
+[AUDIO-FORCE] event=audio_metrics requested=48 resolved=48 enqueued=49 dropped=0 played=21 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1513.5
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] play_voice_text 被调用: 前方是黄灯，请注意
+[AUDIO-FORCE] event=play_voice_text_enter text=前方是黄灯，请注意
+[AUDIO] 全文 TTS 成功: '前方是黄灯，请注意' (31580 bytes)
+[AUDIO] 成功获取音频数据: '前方是黄灯，请注意' (31580 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=前方是黄灯，请注意 source=tts bytes=31580 resolve_ms=2048.9
+[AUDIO-FORCE] event=audio_metrics requested=49 resolved=49 enqueued=50 dropped=0 played=21 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1524.4
+[ASR/AI FINAL] [导航] 前方是黄灯，请注意
+[AUTO_SCENE] 检测到场景: traffic_light_yellow, 播报: 前方是黄灯，请注意
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=2.9 sem_ms/frame=1570.6 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=2
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=73.6
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=4.1 sem_ms/frame=1671.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=73.6
+[AUDIO-FORCE] event=audio_metrics requested=51 resolved=51 enqueued=52 dropped=0 played=21 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1467.5
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=2.9 sem_ms/frame=1809.0 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=73.4
+[AUDIO-FORCE] event=audio_metrics requested=52 resolved=52 enqueued=53 dropped=0 played=21 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1440.7
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1525.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+Corrupt JPEG data: premature end of data segment
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=74.0
+[AUDIO-FORCE] event=audio_metrics requested=53 resolved=53 enqueued=54 dropped=0 played=21 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1414.9
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1692.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=73.6
+[AUDIO-FORCE] event=audio_metrics requested=54 resolved=54 enqueued=55 dropped=0 played=21 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1390.1
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1702.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=73.4
+[AUDIO-FORCE] event=audio_metrics requested=55 resolved=55 enqueued=56 dropped=0 played=21 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1366.2
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1617.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=73.7
+[AUDIO-FORCE] event=audio_metrics requested=56 resolved=56 enqueued=57 dropped=0 played=21 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1343.1
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1637.5 nav_ms/frame=0.1 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+[WS] connection closed
+[AUDIO] play_voice_text 被调用: 当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境看起来比较安全，前方没有明显障碍物。
+[AUDIO] 文本命中成功: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO] 成功获取音频数据: '当前环境看起来比较安全，前方没有明显障碍物。' (149432 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境看起来比较安全，前方没有明显障碍物。 source=map bytes=149432 resolve_ms=73.7
+[AUDIO-FORCE] event=audio_metrics requested=57 resolved=57 enqueued=58 dropped=0 played=21 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1320.8
+[ASR/AI FINAL] [导航] 当前环境看起来比较安全，前方没有明显障碍物。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.2 sem_ms/frame=1574.8 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+
+[AUDIO] client connected
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[WS] connection closed
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[WS] connection closed
+
+[AUDIO] client connected
+[AUDIO] START received
+Exception in thread Thread-75 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[WS] connection closed
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=151352
+[AUDIO-FORCE] event=audio_metrics requested=57 resolved=57 enqueued=58 dropped=0 played=22 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1320.8
+ALSA lib pcm.c:8568:(snd_pcm_recover) underrun occurred
+[AUDIO-FORCE] event=output_dispatch mode=stream stream_clients=1 bytes=151352
+[AUDIO-FORCE] event=output_dispatch mode=local_fallback stream_clients=0 bytes=150712
+[AUDIO-FORCE] event=audio_metrics requested=57 resolved=57 enqueued=58 dropped=0 played=24 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1320.8
+
+[AUDIO] client connected
+[AUDIO] START received
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[AUDIO] play_voice_text 被调用: 当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。
+[AUDIO] 全文 TTS 成功: '当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。' (128732 bytes)
+[AUDIO] 成功获取音频数据: '当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。' (128732 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。 source=tts bytes=128732 resolve_ms=2540.9
+[AUDIO-FORCE] event=audio_metrics requested=58 resolved=58 enqueued=59 dropped=0 played=24 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1341.9
+[ASR/AI FINAL] [导航] 当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。
+Exception in thread Thread-77 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[AUDIO] play_voice_text 被调用: 前方有障碍物，注意安全
+[AUDIO-FORCE] event=play_voice_text_enter text=前方有障碍物，注意安全
+[AUDIO] 文本命中成功: '前方有障碍物，注意安全' (42912 bytes)
+[AUDIO] 成功获取音频数据: '前方有障碍物，注意安全' (42912 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=前方有障碍物，注意安全 source=map bytes=42912 resolve_ms=23.2
+[AUDIO-FORCE] event=audio_metrics requested=59 resolved=59 enqueued=60 dropped=0 played=24 suppressed_empty=0 suppressed_cooldown=0 failed_no_audio=0 avg_resolve_ms=1319.5
+[ASR/AI FINAL] [导航] 前方有障碍物，注意安全
+[AUTO_SCENE] 检测到场景: obstacle, 播报: 前方有障碍物，注意安全
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=7.2 sem_ms/frame=1606.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=2
+[AUDIO] play_voice_text 被调用: 当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。 第2个物体：5点方向右侧的笔记本电脑，距离约8.0米，建议从左侧绕开。
+[AUDIO-FORCE] event=play_voice_text_enter text=当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。 第2个物体：5点方向右侧的笔记本电脑，距离约8.0米，建议从左侧绕开。
+[AUDIO] 全文 TTS 成功: '当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。 第2个物体：5点方向右侧的笔记本电脑，距离约8.0米，建议从左侧绕开。' (227556 bytes)
+[AUDIO] 成功获取音频数据: '当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。 第2个物体：5点方向右侧的笔记本电脑，距离约8.0米，建议从左侧绕开。' (227556 bytes)
+[AUDIO-FORCE] event=play_voice_text_resolved text=当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。 第2个物体：5点方向右侧的笔记本电脑，距离约8.0米，建议从左侧绕开。 source=tts bytes=227556 resolve_ms=3020.2
+[ASR/AI FINAL] [导航] 当前环境扫描结果： 第1个物体：【注意】9点方向左侧的人，距离约1.9米，建议从右侧绕开。 第2个物体：5点方向右侧的笔记本电脑，距离约8.0米，建议从左侧绕开。
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.6 sem_ms/frame=1593.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=1
+
+[AUDIO] client connected
+[WS] connection closed
+
+[AUDIO] client connected
+
+[AUDIO] client connected
+[WS] connection closed
+[WS] connection closed
+[WS] connection closed
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+
+[AUDIO] client connected
+[AUDIO] START received
+[CAMERA] ESP32 connected
+[NAVIGATION] 导航器已存在，无需重新初始化
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=7.4 sem_ms/frame=1628.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+Exception in thread Thread-80 (__receive_worker):
+Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1562, in _create_direct_connection
+    hosts = await self._resolve_host(host, port, traces=traces)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1178, in _resolve_host
+    return await asyncio.shield(resolved_host_task)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1209, in _resolve_host_with_throttle
+    addrs = await self._resolver.resolve(host, port, family=self._family)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/resolver.py", line 40, in resolve
+    infos = await self._loop.getaddrinfo(
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 863, in getaddrinfo
+    return await self.run_in_executor(
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/usr/lib/python3.10/socket.py", line 955, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.10/threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/audio/asr/recognition.py", line 172, in __receive_worker
+    for part in responses:
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 68, in <genexpr>
+    return (item for item in response)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 95, in async_to_sync
+    for message in iter_over_async(async_generator, loop):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 85, in iter_over_async
+    done, obj = loop.run_until_complete(get_next())
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/common/utils.py", line 79, in get_next
+    obj = await ait.__anext__()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 140, in connection_handler
+    raise e
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/dashscope/api_entities/websocket_request.py", line 94, in connection_handler
+    async with session.ws_connect(self.url,
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1510, in __aenter__
+    self._resp: _RetType = await self._coro
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 1076, in _ws_connect
+    resp = await self.request(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 779, in _request
+    resp = await handler(req)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/client.py", line 734, in _connect_and_send_request
+    conn = await self._connector.connect(
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 672, in connect
+    proto = await self._create_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1239, in _create_connection
+    _, proto = await self._create_direct_connection(req, traces, timeout)
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/aiohttp/connector.py", line 1568, in _create_direct_connection
+    raise ClientConnectorDNSError(req.connection_key, exc) from exc
+aiohttp.client_exceptions.ClientConnectorDNSError: Cannot connect to host dashscope.aliyuncs.com:443 ssl:default [Temporary failure in name resolution]
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1966.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+^C^C^C^C[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1925.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1524.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1556.2 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1554.3 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1518.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.5 sem_ms/frame=1554.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1526.1 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1582.0 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+^C^C[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1542.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+^C^C^C[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1679.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1572.8 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1566.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1718.6 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+^A^A[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1693.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+A^C[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.3 sem_ms/frame=1526.7 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1553.9 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1791.5 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1503.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+Corrupt JPEG data: premature end of data segment
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.1 sem_ms/frame=1496.4 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+Corrupt JPEG data: premature end of data segment
+[PIPELINE] fps_in=0.7 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1504.8 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[PIPELINE] fps_in=0.1 decode_ok=100.0% decode_ms=3.0 sem_ms/frame=1503.8 nav_ms/frame=0.0 viewer_fps=0.0 viewer_encode_ms=0.0 voice_emit=0
+[WS] connection closed
+[CAMERA] ESP32 disconnected
+[TRAFFIC] 检测状态已重置
+[TRAFFIC] 检测状态已重置
+[NAV MASTER] 统领器已重置
+[SHUTDOWN] 开始清理资源...
+[HARD-RESET] shutdown
+[SHUTDOWN] 资源清理完成
+ERROR:    Traceback (most recent call last):
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/starlette/routing.py", line 686, in lifespan
+    await receive()
+  File "/home/nano0/aiglass/lib/python3.10/site-packages/uvicorn/lifespan/on.py", line 137, in receive
+    return await self.receive_queue.get()
+  File "/usr/lib/python3.10/asyncio/queues.py", line 159, in get
+    await getter
+asyncio.exceptions.CancelledError
+
+[AUDIO] 广播音频失败: 
+ALSA lib pcm.c:8568:(snd_pcm_recover) underrun occurred
+[AUDIO] 广播音频失败: 
+Task was destroyed but it is pending!
+task: <Task pending name='Task-15089' coro=<imu_broadcast() running at /home/nano0/Codes/AIglass-dev/app_main.py:2299>>
+/usr/lib/python3.10/asyncio/base_events.py:674: RuntimeWarning: coroutine 'imu_broadcast' was never awaited
+  self._ready.clear()
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback
+

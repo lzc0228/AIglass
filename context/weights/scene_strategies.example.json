@@ -1,0 +1,32 @@
+[
+  {
+    "name": "traffic_light",
+    "keywords": ["traffic light", "signal", "red light", "green light"],
+    "base_confidence": 0.9,
+    "priority": 5
+  },
+  {
+    "name": "crosswalk",
+    "keywords": ["crosswalk", "zebra crossing", "zebra"],
+    "base_confidence": 0.8,
+    "priority": 4
+  },
+  {
+    "name": "supermarket",
+    "keywords": ["shelf", "shopping cart", "aisle", "checkout", "counter"],
+    "base_confidence": 0.8,
+    "priority": 3
+  },
+  {
+    "name": "hospital",
+    "keywords": ["doctor", "nurse", "hospital bed", "wheelchair", "clinic"],
+    "base_confidence": 0.8,
+    "priority": 4
+  },
+  {
+    "name": "construction",
+    "keywords": ["cone", "barrier", "fence", "crane", "warning sign"],
+    "base_confidence": 0.9,
+    "priority": 5
+  }
+]

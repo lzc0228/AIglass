@@ -1,0 +1,36 @@
+# 导航任务权重（TaskWeight）
+# 格式：class weight
+# 说明：越大越优先；未配置默认为 1.0
+
+person 1.0
+car 1.0
+bus 1.0
+truck 1.0
+bicycle 0.9
+motorcycle 0.9
+scooter 0.9
+stroller 0.8
+dog 0.8
+animal 0.7
+
+pole 0.4
+post 0.4
+column 0.4
+pillar 0.4
+stanchion 0.4
+bollard 0.4
+utility pole 0.4
+telegraph pole 0.4
+light pole 0.4
+street pole 0.4
+signpost 0.4
+support post 0.4
+vertical post 0.4
+
+bench 0.3
+chair 0.3
+potted plant 0.3
+hydrant 0.3
+cone 0.4
+stone 0.4
+box 0.4

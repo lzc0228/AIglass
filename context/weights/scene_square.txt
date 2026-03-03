@@ -1,0 +1,5 @@
+# 广场场景权重
+bench 1.2
+statue 1.2
+fountain 1.3
+person 1.1

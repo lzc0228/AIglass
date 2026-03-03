@@ -1,0 +1,7 @@
+# 办公楼场景权重
+desk 1.3
+chair 1.2
+computer 1.3
+monitor 1.2
+printer 1.2
+person 1.1

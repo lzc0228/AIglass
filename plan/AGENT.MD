@@ -2,6 +2,9 @@
 
 This folder is the single source of execution state for long-running work.
 
+## Tips
+conda activate open_glasses
+
 ## Session Start (Required)
 
 1. Read `plan/task.json`.

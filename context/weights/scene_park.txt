@@ -1,0 +1,49 @@
+# 公园场景权重
+# 关注：路径、座椅、植被、水景
+
+# 核心设施
+path 1.3
+walkway 1.3
+trail 1.3
+bench 1.4
+chair 1.2
+
+# 自然景物
+tree 1.2
+bush 1.1
+grass 1.0
+lawn 1.0
+flower bed 1.2
+flower 1.2
+pond 1.3
+fountain 1.3
+water 1.2
+
+# 导航
+sign 1.3
+map 1.2
+information 1.2
+entrance 1.3
+exit 1.3
+
+# 设施
+trash can 1.0
+lamp post 1.1
+playground 1.2
+
+# 人员
+person 1.1
+child 1.2
+dog 1.1
+
+# 危险
+uneven ground 1.4
+hole 1.5
+slippery 1.3
+low branch 1.4
+water edge 1.3
+
+# 交通（较低）
+bicycle 1.0
+scooter 1.0
+car 0.5

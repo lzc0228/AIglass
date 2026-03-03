@@ -1,0 +1,16 @@
+{
+  "HIGH": [
+    "紧急，{clock}点方向{distance}有{object}，先停下",
+    "注意，{lr_zh}{distance}有{object}靠近",
+    "{scene_prefix}{lr_zh}{distance}有{object}，请停下"
+  ],
+  "MEDIUM": [
+    "{scene_prefix}{lr_zh}{distance}有{object}，{action}",
+    "{clock}点方向{distance}有{object}，{action}",
+    "注意{lr_zh}{distance}有{object}"
+  ],
+  "LOW": [
+    "{scene_prefix}{lr_zh}{distance}是{object}",
+    "前方{lr_zh}{distance}是{object}"
+  ]
+}
